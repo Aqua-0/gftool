@@ -22,18 +22,23 @@ namespace Trinity.Core.Cache
 
         public static void Open(string path = CachePath)
         {
+            // Don't wipe an already-loaded cache just because the caller tried a missing default path.
+            // This gets called a lot (every GFPAK open).
+            var resolved = ResolveCachePath(path);
+            if (resolved == null)
+            {
+                return;
+            }
+
             Cache = new Dictionary<ulong, string>();
 
-            if (File.Exists(path))
+            using var br = new BinaryReader(File.OpenRead(resolved));
+            var count = br.ReadUInt64();
+            for (ulong i = 0; i < count; i++)
             {
-                using var br = new BinaryReader(File.OpenRead(path));
-                var count = br.ReadUInt64();
-                for (ulong i = 0; i < count; i++)
-                {
-                    var hash = br.ReadUInt64();
-                    var name = br.ReadString();
-                    Cache[hash] = name;
-                }
+                var hash = br.ReadUInt64();
+                var name = br.ReadString();
+                Cache[hash] = name;
             }
         }
 
@@ -148,6 +153,46 @@ namespace Trinity.Core.Cache
             string? str = null;
             Cache.TryGetValue(hash, out str);
             return str;
+        }
+
+        private static string? ResolveCachePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                path = CachePath;
+            }
+
+            // Absolute or already-correct relative path.
+            if (File.Exists(path))
+            {
+                return path;
+            }
+
+            // If the cache is already loaded, don't replace it with an empty one.
+            if (Cache.Count > 0)
+            {
+                return null;
+            }
+
+            // Common case: running from an output folder where the cache is next to the executable.
+            try
+            {
+                var baseDir = AppContext.BaseDirectory;
+                if (!string.IsNullOrWhiteSpace(baseDir))
+                {
+                    var candidate = Path.Combine(baseDir, Path.GetFileName(path));
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
         }
 
     }

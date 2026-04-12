@@ -8,12 +8,41 @@ using System.Linq;
 using System.Diagnostics;
 using Trinity.Core.Flatbuffers.TR.Model;
 using System.Drawing;
+using System.Threading.Tasks;
 
 
 namespace TrinityFileExplorer
 {
     public partial class TrinityExplorerWindow : Form
     {
+        private async Task<bool> ExportWithProgressAsync(ulong[] hashes, string outFolder)
+        {
+            if (!hasOodleDll) return false;
+            if (fileDescriptor == null || fileSystem == null) return false;
+
+            var exportWindow = new ExportProgressWindow(fileDescriptor, fileSystem);
+            exportWindow.Show(this);
+
+            try
+            {
+                var exported = await Task.Run(() => exportWindow.SaveFiles(hashes, outFolder));
+                exportWindow.Close();
+
+                if (!exported)
+                {
+                    MessageBox.Show("No files were exported.\n\nThis usually means the selected files can't be resolved to packs for this RomFS, or the file system doesn't match the file descriptor.", "Export");
+                }
+
+                return exported;
+            }
+            catch (Exception ex)
+            {
+                try { exportWindow.Close(); } catch { }
+                MessageBox.Show(ex.Message, "Export failed");
+                return false;
+            }
+        }
+
         private void SaveFile(ulong fileHash, string outFolder)
         {
             if (fileDescriptor == null || fileSystem == null)
@@ -84,7 +113,7 @@ namespace TrinityFileExplorer
 	            return pack;
 	        }
 
-	        private void saveRomFSFileToolStripMenuItem_Click(object sender, EventArgs e)
+	        private async void saveRomFSFileToolStripMenuItem_Click(object sender, EventArgs e)
 	        {
 	            if (!hasOodleDll) return;
 
@@ -96,7 +125,7 @@ namespace TrinityFileExplorer
             {
                 if (grid == explorerFileViewer && row.Cells["FileType"].Value.ToString() == "File Folder")
                 {
-                    SaveFolder(row.Cells["FileName"].Value.ToString(), sfd.SelectedPath);
+                    await SaveFolderAsync(row.Cells["FileName"].Value.ToString(), sfd.SelectedPath);
                 }
                 else
                 {
@@ -105,7 +134,7 @@ namespace TrinityFileExplorer
             }
         }
 
-        private void SaveFolder(string? v, string selectedPath)
+        private async Task SaveFolderAsync(string? v, string selectedPath)
         {
             if (string.IsNullOrEmpty(v) || fileDescriptor == null || fileSystem == null)
             {
@@ -125,10 +154,7 @@ namespace TrinityFileExplorer
                 return;
             }
 
-            var exportWindow = new ExportProgressWindow(fileDescriptor, fileSystem);
-            exportWindow.Show();
-            exportWindow.SaveFiles(hashes, selectedPath);
-            exportWindow.Close();
+            await ExportWithProgressAsync(hashes, selectedPath);
         }
 
         private void RemoveFromLayeredFSMenuItem_Click(object sender, EventArgs e)
@@ -140,7 +166,7 @@ namespace TrinityFileExplorer
         {
             explorerFileViewer.AddToLayeredFS();
         }
-        private void allFilesToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void allFilesToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (!hasOodleDll) return;
             if (fileDescriptor == null || fileSystem == null) return;
@@ -148,11 +174,7 @@ namespace TrinityFileExplorer
             var sfd = new FolderBrowserDialog();
             if (sfd.ShowDialog() != DialogResult.OK) return;
 
-            var export_window = new ExportProgressWindow(fileDescriptor, fileSystem);
-
-            export_window.Show();
-            export_window.SaveFiles(fileDescriptor.FileHashes.ToArray(), sfd.SelectedPath);
-            export_window.Close();
+            await ExportWithProgressAsync(fileDescriptor.FileHashes.ToArray(), sfd.SelectedPath);
         }
 
         private async void visibleFilesToolStripMenuItem_Click(object sender, EventArgs e)
@@ -164,15 +186,11 @@ namespace TrinityFileExplorer
             var sfd = new FolderBrowserDialog();
             if (sfd.ShowDialog() != DialogResult.OK) return;
 
-            var export_window = new ExportProgressWindow(fileDescriptor, fileSystem);
-
-            export_window.Show();
-            export_window.SaveFiles(activeViewer.GetFiles().ToArray(), sfd.SelectedPath);
-            export_window.Close();
+            await ExportWithProgressAsync(activeViewer.GetFiles().ToArray(), sfd.SelectedPath);
 
         }
 
-        private void unhashedFilesToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void unhashedFilesToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (!hasOodleDll) return;
             if (fileDescriptor == null || fileSystem == null) return;
@@ -181,11 +199,7 @@ namespace TrinityFileExplorer
             var sfd = new FolderBrowserDialog();
             if (sfd.ShowDialog() != DialogResult.OK) return;
 
-            var export_window = new ExportProgressWindow(fileDescriptor, fileSystem);
-
-            export_window.Show();
-            export_window.SaveFiles(activeViewer.GetUnhashedFiles().ToArray(), sfd.SelectedPath);
-            export_window.Close();
+            await ExportWithProgressAsync(activeViewer.GetUnhashedFiles().ToArray(), sfd.SelectedPath);
         }
     }
 }

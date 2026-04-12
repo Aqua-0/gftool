@@ -292,6 +292,33 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             return Path.Combine(dir, candidate);
-        }
+	        }
+
+	        public void ApplyTrmmtFile(string trmmtPath, byte[] bytes, bool resetOverrides = true)
+	        {
+	            if (string.IsNullOrWhiteSpace(trmmtPath)) throw new ArgumentException("Missing TRMMT path.", nameof(trmmtPath));
+	            if (bytes == null) throw new ArgumentNullException(nameof(bytes));
+
+	            if (!TrySetAssetOverrideBytes(trmmtPath, bytes))
+	            {
+	                throw new InvalidOperationException("Model does not support in-memory asset overrides (expected InMemoryOverrideAssetProvider).");
+	            }
+
+	            preferredMaterialMetadataPath = trmmtPath;
+	            materialMetadata = null;
+	            materialMetadataPath = null;
+
+	            if (resetOverrides)
+	            {
+	                currentMaterialSetName = null;
+	                materialMetadataSelections.Clear();
+	                materialMetadataValueOverrides.Clear();
+	                materialMetadataLastAppliedUniformNames.Clear();
+	            }
+
+	            EnsureMaterialMetadataLoaded();
+	            ApplyMaterialMetadataOverridesToRuntimeMaterials();
+	            ApplyMaterialUniformOverridesToRuntimeMaterials();
+	        }
 	    }
 }

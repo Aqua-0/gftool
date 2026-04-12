@@ -16,10 +16,13 @@ namespace TrinityModelViewer.Export
             Dictionary<string, Material> materialByName,
             Dictionary<string, int> textureCache,
             string materialName,
-            string texDir)
+            string texDir,
+            bool forceRepeatU = false,
+            bool forceRepeatV = false)
         {
             materialName ??= string.Empty;
-            if (gltfMaterialIndex.TryGetValue(materialName, out int existing))
+            string materialKey = $"{materialName}|ru={(forceRepeatU ? 1 : 0)}|rv={(forceRepeatV ? 1 : 0)}";
+            if (gltfMaterialIndex.TryGetValue(materialKey, out int existing))
             {
                 return existing;
             }
@@ -27,11 +30,11 @@ namespace TrinityModelViewer.Export
             materialByName.TryGetValue(materialName, out var mat);
             var texByName = mat?.Textures?.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, Texture>(StringComparer.OrdinalIgnoreCase);
 
-            int? baseColorTex = TryGetTextureIndex(textureCache, texByName, "BaseColorMap");
-            int? normalTex = TryGetTextureIndex(textureCache, texByName, "NormalMap");
-            int? aoTex = TryGetTextureIndex(textureCache, texByName, "AOMap");
+            int? baseColorTex = TryGetTextureIndex(gltf, textureCache, mat, texByName, "BaseColorMap", forceRepeatU, forceRepeatV);
+            int? normalTex = TryGetTextureIndex(gltf, textureCache, mat, texByName, "NormalMap", forceRepeatU, forceRepeatV);
+            int? aoTex = TryGetTextureIndex(gltf, textureCache, mat, texByName, "AOMap", forceRepeatU, forceRepeatV);
 
-            int? mrTex = TryAddMetallicRoughnessTexture(gltf, texDir, texByName);
+            int? mrTex = TryAddMetallicRoughnessTexture(gltf, texDir, mat, texByName, materialName, forceRepeatU, forceRepeatV);
 
             var pbr = new GltfPbrMetallicRoughness();
             if (baseColorTex.HasValue)
@@ -66,26 +69,41 @@ namespace TrinityModelViewer.Export
 
             int gltfIndex = gltf.Materials.Count;
             gltf.Materials.Add(gltfMat);
-            gltfMaterialIndex[materialName] = gltfIndex;
+            gltfMaterialIndex[materialKey] = gltfIndex;
             return gltfIndex;
         }
 
-        private static int? TryGetTextureIndex(Dictionary<string, int> textureCache, Dictionary<string, Texture> texByName, string textureName)
+        private static int? TryGetTextureIndex(
+            GltfRoot gltf,
+            Dictionary<string, int> textureCache,
+            Material? material,
+            Dictionary<string, Texture> texByName,
+            string textureName,
+            bool forceRepeatU,
+            bool forceRepeatV)
         {
             if (!texByName.TryGetValue(textureName, out var tex) || tex == null)
             {
                 return null;
             }
 
-            if (textureCache.TryGetValue(GetTextureKey(tex), out var idx))
+            var (wrapS, wrapT) = ResolveExportWrapModes(material, tex);
+            if (textureCache.TryGetValue(GetTextureKey(tex, wrapS, wrapT), out var idx))
             {
-                return idx;
+                return ApplyWrapOverrideToTexture(gltf, idx, wrapS, wrapT, forceRepeatU, forceRepeatV);
             }
 
             return null;
         }
 
-        private static int? TryAddMetallicRoughnessTexture(GltfRoot gltf, string texDir, Dictionary<string, Texture> texByName)
+        private static int? TryAddMetallicRoughnessTexture(
+            GltfRoot gltf,
+            string texDir,
+            Material? material,
+            Dictionary<string, Texture> texByName,
+            string materialName,
+            bool forceRepeatU,
+            bool forceRepeatV)
         {
             texByName.TryGetValue("RoughnessMap", out var roughTex);
             texByName.TryGetValue("MetallicMap", out var metalTex);
@@ -123,15 +141,75 @@ namespace TrinityModelViewer.Export
                 }
             }
 
-            string fileName = "metallicRoughness.png";
+            string baseName = string.IsNullOrWhiteSpace(materialName) ? "metallicRoughness" : $"{materialName}_metallicRoughness";
+            string fileName = SanitizeFileName($"{baseName}.png");
             string outPath = Path.Combine(texDir, fileName);
             outBmp.Save(outPath, ImageFormat.Png);
 
             int imgIndex = gltf.Images.Count;
             gltf.Images.Add(new GltfImage { Uri = $"{Path.GetFileName(texDir)}/{fileName}" });
             int texIndex = gltf.Textures.Count;
-            gltf.Textures.Add(new GltfTexture { Sampler = 0, Source = imgIndex, Name = "metallicRoughness" });
+            var samplerSource = roughTex ?? metalTex;
+            var (wrapS, wrapT) = samplerSource != null ? ResolveExportWrapModes(material, samplerSource) : (OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge, OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge);
+            if (forceRepeatU && wrapS == OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge)
+            {
+                wrapS = OpenTK.Graphics.OpenGL4.TextureWrapMode.Repeat;
+            }
+            if (forceRepeatV && wrapT == OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge)
+            {
+                wrapT = OpenTK.Graphics.OpenGL4.TextureWrapMode.Repeat;
+            }
+            int samplerIndex = GetOrCreateSampler(gltf, wrapS, wrapT);
+            gltf.Textures.Add(new GltfTexture { Sampler = samplerIndex, Source = imgIndex, Name = "metallicRoughness" });
             return texIndex;
+        }
+
+        private static int ApplyWrapOverrideToTexture(
+            GltfRoot gltf,
+            int textureIndex,
+            OpenTK.Graphics.OpenGL4.TextureWrapMode nativeWrapS,
+            OpenTK.Graphics.OpenGL4.TextureWrapMode nativeWrapT,
+            bool forceRepeatU,
+            bool forceRepeatV)
+        {
+            if (textureIndex < 0 || textureIndex >= gltf.Textures.Count)
+            {
+                return textureIndex;
+            }
+
+            var desiredWrapS = forceRepeatU && nativeWrapS == OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge
+                ? OpenTK.Graphics.OpenGL4.TextureWrapMode.Repeat
+                : nativeWrapS;
+            var desiredWrapT = forceRepeatV && nativeWrapT == OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge
+                ? OpenTK.Graphics.OpenGL4.TextureWrapMode.Repeat
+                : nativeWrapT;
+
+            var original = gltf.Textures[textureIndex];
+            int desiredSampler = GetOrCreateSampler(gltf, desiredWrapS, desiredWrapT);
+            if (original.Sampler == desiredSampler)
+            {
+                return textureIndex;
+            }
+
+            for (int i = 0; i < gltf.Textures.Count; i++)
+            {
+                var tex = gltf.Textures[i];
+                if (tex.Source == original.Source &&
+                    tex.Sampler == desiredSampler &&
+                    string.Equals(tex.Name, original.Name, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            int newTextureIndex = gltf.Textures.Count;
+            gltf.Textures.Add(new GltfTexture
+            {
+                Name = original.Name,
+                Sampler = desiredSampler,
+                Source = original.Source
+            });
+            return newTextureIndex;
         }
 
         private static Bitmap FlipGreenChannel(Bitmap src)

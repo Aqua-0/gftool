@@ -10,6 +10,8 @@ uniform sampler2D RoughnessMap1;
 uniform sampler2D RoughnessMap2;
 uniform sampler2D MetallicMap;
 uniform sampler2D AOMap;
+uniform sampler2D PackedMap;
+uniform sampler2D EmissionColorMap;
 uniform sampler2D DetailMaskMap;
 uniform sampler2D SpecularMaskMap;
 uniform sampler2D HighlightMaskMap;
@@ -35,16 +37,35 @@ uniform bool EnableRoughnessMap1;
 uniform bool EnableRoughnessMap2;
 uniform bool EnableMetallicMap;
 uniform bool EnableAOMap;
+uniform bool EnablePackedMap;
+uniform bool EnableEmissionColorMap;
 uniform bool EnableDetailMaskMap;
 uniform bool EnableSpecularMaskMap;
 uniform bool EnableHighlightMaskMap;
 uniform int NumMaterialLayer;
 uniform bool EnableVertexColor;
+uniform bool TransparentPass;
+uniform bool PremultiplyAlpha;
 uniform bool LegacyMode;
 uniform bool EnableLerpBaseColorEmission;
 uniform float AlphaTestThreshold;
 uniform float Metallic;
 uniform float Roughness;
+uniform vec4 EmissionColor;
+uniform float EmissionIntensity;
+uniform bool EnableFresnelEffect;
+uniform vec4 FresnelColor;
+uniform float FresnelIntensity;
+uniform float FresnelPower;
+uniform float FresnelAngleBias;
+uniform float NormalHeight;
+uniform float RoughnessIntensity;
+uniform float MetallicIntensity;
+uniform vec4 ScrollUVSpeed;
+uniform vec4 time_params;
+uniform bool EnableTeraEffect;
+uniform vec3 TeraColor;
+uniform float TeraStrength;
 
 uniform vec3 LightDirection;
 uniform vec3 LightColor;
@@ -94,8 +115,6 @@ vec2 ApplyUvTransform(vec2 uv, vec4 srt, int mode)
 
 vec2 WrapUvIfOutside01(vec2 uv)
 {
-    // Some assets use atlased masks with UVs outside [0,1]. With CLAMP sampling this collapses to edges,
-    // causing entire regions to pick a single layer. Wrap only when UVs are outside range
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
     {
         return fract(uv);
@@ -117,6 +136,12 @@ mat3 CotangentFrame(vec3 n, vec3 p, vec2 uv)
 
     float invmax = inversesqrt(max(dot(t, t), dot(b, b)));
     return mat3(t * invmax, b * invmax, n);
+}
+
+float WrapNdotL(float nDotL, float wrap)
+{
+    float w = max(wrap, 0.0);
+    return clamp((nDotL + w) / (1.0 + w), 0.0, 1.0);
 }
 
 float D_GGX(float a2, float NdotH)
@@ -143,6 +168,7 @@ vec3 F_Schlick(vec3 F0, float VdotH)
 void main()
 {
     vec2 baseUv = vec2(SelectUv(0).x, 1.0 - SelectUv(0).y);
+    baseUv += ScrollUVSpeed.xy * time_params.x;
     vec2 uv = WrapUvIfOutside01(ApplyUvTransform(baseUv, UVScaleOffset, UVTransformMode));
     vec2 uvNormal = WrapUvIfOutside01(ApplyUvTransform(baseUv, UVScaleOffsetNormal, UVTransformMode));
 
@@ -167,6 +193,7 @@ void main()
         {
             discard;
         }
+        float alpha = (EnableBaseColorMap ? baseSample.a : 1.0) * BaseColor.a;
         vec3 texColor = baseSample.rgb;
         vec3 baseTint = BaseColorMultiply ? BaseColor.rgb : vec3(1.0);
         vec3 baseLayerColor = texColor * baseTint;
@@ -184,21 +211,57 @@ void main()
                          layer4 * layerMask.a;
         }
 
-        vec3 vertexColor = EnableVertexColor ? Color.rgb : vec3(1.0);
-        vec3 albedo = layerColor * vertexColor;
+    vec3 vertexColor = EnableVertexColor ? Color.rgb : vec3(1.0);
+    vec3 albedo = layerColor * vertexColor;
 
-        gAlbedo = vec4(albedo, 1.0);
-        gNormal = vec4(normalize(Normal) * 0.5 + 0.5, 1.0);
-        gSpecular = vec4(1.0, 0.0, 0.0, 0.0); // AO=1, metallic=0
-        gAO = vec4(0.0, 0.0, 0.0, 1.0);       // emission=0, shadingModel=PreLit
+    vec3 emissionColor = EmissionColor.rgb;
+    if (EnableEmissionColorMap)
+    {
+        emissionColor = texture(EmissionColorMap, uv).rgb;
+    }
+    vec3 emission = emissionColor * EmissionIntensity;
+    if (EnableLerpBaseColorEmission)
+    {
+        float t = clamp(EmissionIntensity, 0.0, 1.0);
+        albedo = mix(albedo, emissionColor, t);
+    }
+
+    if (EnableFresnelEffect && FresnelIntensity > 0.0)
+    {
+        vec3 viewDir = normalize(CameraPos - FragPos);
+        float nv = clamp(dot(normalize(Normal), viewDir), 0.00001, 1.0);
+        float u = clamp(max(nv - FresnelAngleBias, 0.0), 0.0, 1.0);
+        float rim = pow(1.0 - u, max(FresnelPower, 0.0001));
+        emission += FresnelColor.rgb * (FresnelIntensity * rim);
+    }
+
+    if (TransparentPass)
+    {
+        vec3 colorOut = albedo + emission;
+        if (PremultiplyAlpha)
+        {
+            colorOut *= alpha;
+        }
+        gAlbedo = vec4(colorOut, alpha);
+        gNormal = vec4(0.0);
+        gSpecular = vec4(0.0);
+        gAO = vec4(0.0);
         return;
     }
+
+    gAlbedo = vec4(albedo, 1.0);
+    gNormal = vec4(normalize(Normal) * 0.5 + 0.5, 1.0);
+    gSpecular = vec4(1.0, 0.0, 0.0, 0.0);
+    gAO = vec4(emission, 1.0);
+    return;
+}
 
     vec4 baseSample = EnableBaseColorMap ? texture(BaseColorMap, uv) : vec4(1.0);
     if (EnableAlphaTest && EnableBaseColorMap && baseSample.a < AlphaTestThreshold)
     {
         discard;
     }
+    float alpha = (EnableBaseColorMap ? baseSample.a : 1.0) * BaseColor.a;
     vec3 texColor = baseSample.rgb;
     vec3 baseTint = BaseColorMultiply ? BaseColor.rgb : vec3(1.0);
     vec3 baseLayerColor = texColor * baseTint;
@@ -217,6 +280,18 @@ void main()
     }
     vec3 vertexColor = EnableVertexColor ? Color.rgb : vec3(1.0);
     vec3 albedo = layerColor * vertexColor;
+
+    vec3 emissionColor = EmissionColor.rgb;
+    if (EnableEmissionColorMap)
+    {
+        emissionColor = texture(EmissionColorMap, uv).rgb;
+    }
+    vec3 emission = emissionColor * EmissionIntensity;
+    if (EnableLerpBaseColorEmission)
+    {
+        float t = clamp(EmissionIntensity, 0.0, 1.0);
+        albedo = mix(albedo, emissionColor, t);
+    }
 
     float detailMask = EnableDetailMaskMap ? texture(DetailMaskMap, uv).r : 0.0;
     albedo *= mix(1.0, 0.85, detailMask);
@@ -242,13 +317,20 @@ void main()
         vec2 uvAo = WrapUvIfOutside01(ApplyUvTransform(aoBase, UVScaleOffset, UVTransformMode));
         ao = texture(AOMap, uvAo).r;
     }
+    if (EnablePackedMap)
+    {
+        vec3 packedValue = texture(PackedMap, uv).rgb;
+        ao = packedValue.r;
+        roughness = packedValue.g * RoughnessIntensity;
+        metallic = packedValue.b * MetallicIntensity;
+    }
 
     vec3 n = normalize(Normal);
     vec3 tangentNormal = vec3(0.0, 0.0, 1.0);
     if (EnableNormalMap)
     {
         vec4 nm = texture(NormalMap, uvNormal);
-        vec2 rg = nm.rg * 2.0 - 1.0;
+        vec2 rg = (nm.rg * 2.0 - 1.0) * NormalHeight;
         if (ReconstructNormalZ)
         {
             float nz = sqrt(max(0.0, 1.0 - dot(rg, rg)));
@@ -264,7 +346,7 @@ void main()
     if (EnableNormalMap1 && useLayerMask && HasTangents)
     {
         vec4 nm1 = texture(NormalMap1, uvNormal);
-        vec2 rg1 = nm1.rg * 2.0 - 1.0;
+        vec2 rg1 = (nm1.rg * 2.0 - 1.0) * NormalHeight;
         vec3 n1;
         if (ReconstructNormalZ)
         {
@@ -282,7 +364,7 @@ void main()
     if (EnableNormalMap2 && useLayerMask && HasTangents)
     {
         vec4 nm2 = texture(NormalMap2, uvNormal);
-        vec2 rg2 = nm2.rg * 2.0 - 1.0;
+        vec2 rg2 = (nm2.rg * 2.0 - 1.0) * NormalHeight;
         vec3 n2;
         if (ReconstructNormalZ)
         {
@@ -321,10 +403,101 @@ void main()
     float highlightMask = EnableHighlightMaskMap ? texture(HighlightMaskMap, uv).r : 0.0;
     float highlightBoost = mix(1.0, 2.0, highlightMask);
     float reflectance = clamp(specMask * highlightBoost, 0.0, 1.0);
+    if (EnableLerpBaseColorEmission)
+    {
+        reflectance = mix(reflectance, 0.0, clamp(EmissionIntensity, 0.0, 1.0));
+    }
 
-    // Deferred attributes (PBR shading computed in `gbuffer.fsh`)
+    if (EnableFresnelEffect && FresnelIntensity > 0.0)
+    {
+        vec3 viewDir = normalize(CameraPos - FragPos);
+        float nv = clamp(dot(n, viewDir), 0.00001, 1.0);
+        float u = clamp(max(nv - FresnelAngleBias, 0.0), 0.0, 1.0);
+        float rim = pow(1.0 - u, max(FresnelPower, 0.0001));
+        emission += FresnelColor.rgb * (FresnelIntensity * rim);
+    }
+
+    if (TransparentPass)
+    {
+        if (!gl_FrontFacing)
+        {
+            n = -n;
+        }
+
+        vec3 worldPos = FragPos;
+        vec3 viewDir = normalize(CameraPos - worldPos);
+        vec3 lightDir = normalize(-LightDirection);
+        vec3 halfDir = normalize(viewDir + lightDir);
+
+        float NdotL0 = dot(n, lightDir);
+        float NdotL = TwoSidedDiffuse ? abs(NdotL0) : max(NdotL0, 0.0);
+        float wrappedNdotL = WrapNdotL(NdotL, LightWrap);
+
+        float NdotV = clamp(abs(dot(n, viewDir)), 0.0001, 1.0);
+        float NdotH = clamp(max(dot(n, halfDir), 0.0), 0.0, 1.0);
+        float VdotH = clamp(dot(viewDir, halfDir), 0.0, 1.0);
+
+        if (EnableTeraEffect)
+        {
+            vec3 tint = clamp(TeraColor, vec3(0.0), vec3(8.0));
+            float rim = pow(clamp(1.0 - NdotV, 0.0, 1.0), 4.0);
+            float cell = dot(floor(worldPos * 40.0), vec3(12.9898, 78.233, 37.719));
+            float sparkle = step(0.985, fract(sin(cell) * 43758.5453));
+            float sparkleAnim = 0.5 + 0.5 * sin(time_params.x * 12.0 + dot(worldPos, vec3(3.1, 4.2, 5.3)));
+            sparkle *= sparkleAnim;
+            emission += tint * (rim * 0.65 + sparkle * 1.4) * clamp(TeraStrength, 0.0, 4.0);
+        }
+
+        float a = clamp(roughness, 0.04, 1.0);
+        float a2 = a * a;
+        float k = (a + 1.0);
+        k = (k * k) / 8.0;
+
+        vec3 F0 = mix(vec3(0.04 * reflectance), albedo, clamp(metallic, 0.0, 1.0));
+        vec3 F = F_Schlick(F0, VdotH);
+        float D = D_GGX(a2, NdotH);
+        float G = G_Smith(k, NdotV, NdotL);
+        vec3 specularBRDF = (D * G) * F / max(4.0 * NdotV * NdotL, 0.0001);
+
+        vec3 diffuse = albedo * (1.0 - clamp(metallic, 0.0, 1.0));
+        vec3 lit = AmbientColor + LightColor * wrappedNdotL;
+        vec3 diffuseLit = diffuse * lit;
+        vec3 specularLit = specularBRDF * LightColor * NdotL * max(SpecularScale, 0.0);
+
+        float aoSoft = mix(1.0, ao, 0.65);
+        vec3 colorOut = (diffuseLit + specularLit) * aoSoft + emission;
+        if (PremultiplyAlpha)
+        {
+            colorOut *= alpha;
+        }
+
+        gAlbedo = vec4(colorOut, alpha);
+        gNormal = vec4(0.0);
+        gSpecular = vec4(0.0);
+        gAO = vec4(0.0);
+        return;
+    }
+
+    if (EnableTeraEffect)
+    {
+        vec3 tint = clamp(TeraColor, vec3(0.0), vec3(8.0));
+        vec3 viewDir = normalize(CameraPos - FragPos);
+        float nv = clamp(abs(dot(n, viewDir)), 0.0, 1.0);
+        float rim = pow(clamp(1.0 - nv, 0.0, 1.0), 4.0);
+        float cell = dot(floor(FragPos * 40.0), vec3(12.9898, 78.233, 37.719));
+        float sparkle = step(0.985, fract(sin(cell) * 43758.5453));
+        float sparkleAnim = 0.5 + 0.5 * sin(time_params.x * 12.0 + dot(FragPos, vec3(3.1, 4.2, 5.3)));
+        sparkle *= sparkleAnim;
+
+        float strength = clamp(TeraStrength, 0.0, 4.0);
+        emission += tint * (rim * 0.55 + sparkle * 1.2) * strength;
+        albedo = mix(albedo, albedo * mix(vec3(1.0), tint, 0.65), 0.35 * strength);
+        roughness = mix(roughness, 0.08, 0.6 * strength);
+        metallic = mix(metallic, 0.2, 0.4 * strength);
+    }
+
     gAlbedo = vec4(albedo, roughness);
     gNormal = vec4(n * 0.5 + 0.5, reflectance);
     gSpecular = vec4(ao, metallic, 0.0, 0.0);
-    gAO = vec4(0.0, 0.0, 0.0, 0.0); // emission=0, shadingModel=PBR
+    gAO = vec4(emission, 0.0);
 }

@@ -7,3 +7,8 @@ What we ship
 Why no `.fbs` here?
 - We intentionally avoid vendoring upstream schema text into the tool; only derived reflection blobs are embedded.
 
+Regenerating `.bfbs.b64` (developer workflow)
+- Requires `flatc` on PATH and a local checkout of the PokeDocs schemas.
+- Example (SV `trmdl`):
+  - `flatc --binary --schema -o /tmp/out /path/to/PokeDocs/SV/Flatbuffers/model/trmdl.fbs`
+  - `base64 -w0 /tmp/out/trmdl.bfbs > GFTool.Core/Flatbuffers/Reflections/Bfbs/PokeDocs/SV/model/trmdl.bfbs.b64`

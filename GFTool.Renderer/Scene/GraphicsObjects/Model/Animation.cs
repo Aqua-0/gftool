@@ -155,11 +155,12 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                    continue;
 	                }
 
-	                // Avoid aggressive remaps on facial meshes; if these break they are very obvious.
-	                string meshName = submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : string.Empty;
-	                if (!string.IsNullOrWhiteSpace(meshName) &&
-	                    (meshName.IndexOf("face", StringComparison.OrdinalIgnoreCase) >= 0 ||
-	                     meshName.IndexOf("eye", StringComparison.OrdinalIgnoreCase) >= 0 ||
+		                // Avoid aggressive remaps on facial meshes; if these break they are very obvious.
+		                string meshName = submeshIndex < SubmeshNames.Count ? SubmeshNames[submeshIndex]
+		                    : (submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : string.Empty);
+		                if (!string.IsNullOrWhiteSpace(meshName) &&
+		                    (meshName.IndexOf("face", StringComparison.OrdinalIgnoreCase) >= 0 ||
+		                     meshName.IndexOf("eye", StringComparison.OrdinalIgnoreCase) >= 0 ||
 	                     meshName.IndexOf("mouth", StringComparison.OrdinalIgnoreCase) >= 0 ||
 	                     meshName.IndexOf("teeth", StringComparison.OrdinalIgnoreCase) >= 0 ||
 	                     meshName.IndexOf("tongue", StringComparison.OrdinalIgnoreCase) >= 0))

@@ -157,22 +157,21 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             var bone = Bones[index];
-            var local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
-            var localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+            Matrix4 local;
+            Matrix4 localNoRot;
 
             if (bone.ParentIndex >= 0 && bone.ParentIndex < Bones.Count && bone.ParentIndex != index)
             {
                 if (bone.UseSegmentScaleCompensate)
                 {
                     var parent = Bones[bone.ParentIndex];
-                    local *= Matrix4.CreateScale(
-                        parent.Transform.Scale.X != 0f ? 1f / parent.Transform.Scale.X : 1f,
-                        parent.Transform.Scale.Y != 0f ? 1f / parent.Transform.Scale.Y : 1f,
-                        parent.Transform.Scale.Z != 0f ? 1f / parent.Transform.Scale.Z : 1f);
-                    localNoRot *= Matrix4.CreateScale(
-                        parent.Transform.Scale.X != 0f ? 1f / parent.Transform.Scale.X : 1f,
-                        parent.Transform.Scale.Y != 0f ? 1f / parent.Transform.Scale.Y : 1f,
-                        parent.Transform.Scale.Z != 0f ? 1f / parent.Transform.Scale.Z : 1f);
+                    local = BuildLocalMatrixWithParentScaleInverse(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot, parent.Transform.Scale);
+                    localNoRot = BuildLocalMatrixWithParentScaleInverse(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot, parent.Transform.Scale);
+                }
+                else
+                {
+                    local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+                    localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
                 }
                 var parentWorld = ComputeSkinWorldMatrix(bone.ParentIndex, computed, world, worldNoRot);
                 var parentEffective = bone.IgnoreParentRotation ? worldNoRot[bone.ParentIndex] : parentWorld;
@@ -181,6 +180,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
             else
             {
+                local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+                localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
                 world[index] = local;
                 worldNoRot[index] = localNoRot;
             }
@@ -197,22 +198,21 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             var bone = Bones[index];
-            var local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
-            var localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+            Matrix4 local;
+            Matrix4 localNoRot;
 
             if (bone.ParentIndex >= 0 && bone.ParentIndex < Bones.Count && bone.ParentIndex != index)
             {
                 if (bone.UseSegmentScaleCompensate)
                 {
                     var parent = Bones[bone.ParentIndex];
-                    local *= Matrix4.CreateScale(
-                        parent.Transform.Scale.X != 0f ? 1f / parent.Transform.Scale.X : 1f,
-                        parent.Transform.Scale.Y != 0f ? 1f / parent.Transform.Scale.Y : 1f,
-                        parent.Transform.Scale.Z != 0f ? 1f / parent.Transform.Scale.Z : 1f);
-                    localNoRot *= Matrix4.CreateScale(
-                        parent.Transform.Scale.X != 0f ? 1f / parent.Transform.Scale.X : 1f,
-                        parent.Transform.Scale.Y != 0f ? 1f / parent.Transform.Scale.Y : 1f,
-                        parent.Transform.Scale.Z != 0f ? 1f / parent.Transform.Scale.Z : 1f);
+                    local = BuildLocalMatrixWithParentScaleInverse(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot, parent.Transform.Scale);
+                    localNoRot = BuildLocalMatrixWithParentScaleInverse(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot, parent.Transform.Scale);
+                }
+                else
+                {
+                    local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+                    localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
                 }
                 var parentWorld = ComputeWorldMatrix(bone.ParentIndex, computed, world, worldNoRot);
                 var parentEffective = bone.IgnoreParentRotation ? worldNoRot[bone.ParentIndex] : parentWorld;
@@ -221,6 +221,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
             else
             {
+                local = BuildLocalMatrix(bone.Transform.Scale, bone.Transform.Rotation, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
+                localNoRot = BuildLocalMatrix(bone.Transform.Scale, Quaternion.Identity, bone.Transform.Position, bone.ScalePivot, bone.RotatePivot);
                 world[index] = local;
                 worldNoRot[index] = localNoRot;
             }

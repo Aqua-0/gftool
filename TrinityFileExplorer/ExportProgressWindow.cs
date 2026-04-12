@@ -53,6 +53,10 @@ namespace TrinityFileExplorer
 
             int processed = 0;
             int total = packMap.Sum(pair => pair.Value.Count);
+            if (total == 0)
+            {
+                return false;
+            }
             var options = new ParallelOptions
             {
                 MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1)
@@ -74,7 +78,7 @@ namespace TrinityFileExplorer
                 SavePackFiles(pack, pair.Value, outFolder, total, ref processed);
             });
 
-            return true;
+            return processed > 0;
         }
 
         private void SavePackFiles(PackedArchive pack, HashSet<ulong> hashes, string outFolder, int total, ref int processed)

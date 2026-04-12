@@ -59,15 +59,16 @@ namespace TrinityModelViewer.Export
                                FlatBufferConverter.DeserializeFrom<TRSKL>(skeletonSrcPath);
             }
 
-            var boneNameToJointInfoIndex = BuildBoneNameToJointInfoIndex(referenceSkl);
+            var boneNameToSkinJointIndex = BuildBoneNameToSkinJointIndex(referenceSkl, skeletonSrcPath);
+            var boneNameToPaletteIndex = BuildBoneNameToSkinningPaletteIndex(referenceTrmdlPath, referenceTrmdl, referenceDir, skeletonSrcPath);
 
             var gltf = GltfReader.Load(gltfPath);
-            var meshes = GltfReader.ExtractMeshPrimitives(gltf, boneNameToJointInfoIndex);
+            var meshes = GltfReader.ExtractMeshPrimitives(gltf, boneNameToSkinJointIndex, boneNameToPaletteIndex);
             if (meshes.Count == 0)
             {
                 throw new InvalidOperationException("glTF contains no mesh primitives to export.");
             }
-            if (meshes.Any(m => m.HasSkinning) && boneNameToJointInfoIndex.Count == 0)
+            if (meshes.Any(m => m.HasSkinning) && boneNameToSkinJointIndex.Count == 0)
             {
                 throw new InvalidOperationException(
                     "Reference skeleton could not be resolved (needed to map skinning joints). " +

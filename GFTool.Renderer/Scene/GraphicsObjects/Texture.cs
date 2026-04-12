@@ -179,7 +179,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             // Optional: extracted "out" fallback for disk loads in known Trinity subtrees (model_*/motion_*/share, ik_*).
-            if (assetProvider is DiskAssetProvider &&
+            // Note: most viewer workflows wrap disk loads in an override provider for in-memory edits.
+            var provider = assetProvider;
+            if (provider is InMemoryOverrideAssetProvider mem)
+            {
+                provider = mem.Inner;
+            }
+
+            if (provider is DiskAssetProvider &&
                 RenderOptions.EnableExtractedOutFallback &&
                 !string.IsNullOrWhiteSpace(RenderOptions.ExtractedOutRoot) &&
                 !string.IsNullOrWhiteSpace(SourceFile))
@@ -575,6 +582,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 name.Equals("OcclusionMap", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("RoughnessMap", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("MetallicMap", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("PackedMap", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith("FlowMap", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("ParallaxMap", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("LayerMaskMap", StringComparison.OrdinalIgnoreCase) ||
                 name.EndsWith("DetailMaskMap", StringComparison.OrdinalIgnoreCase) ||

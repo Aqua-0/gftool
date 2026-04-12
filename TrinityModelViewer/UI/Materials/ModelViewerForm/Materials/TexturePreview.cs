@@ -1,3 +1,4 @@
+using BnTxx;
 using GFTool.Renderer.Core;
 using GFTool.Renderer.Scene.GraphicsObjects;
 using OpenTK.Graphics.OpenGL4;
@@ -25,6 +26,7 @@ namespace TrinityModelViewer
             {
                 SetTexturePreview(null, ownsImage: true);
                 SetUvPreview(null, ownsImage: true);
+                UpdateTextureInfoLabel(null, null);
                 UpdateReplaceChannelButtonState();
                 return;
             }
@@ -38,6 +40,7 @@ namespace TrinityModelViewer
 
             SetTexturePreview(null, ownsImage: true);
             SetUvPreview(null, ownsImage: true);
+            UpdateTextureInfoLabel(null, null);
             UpdateReplaceChannelButtonState();
         }
 
@@ -87,6 +90,7 @@ namespace TrinityModelViewer
         {
             UpdateTexturePreviewDisplay();
             UpdateReplaceChannelButtonState();
+            UpdateTextureInfoLabel(GetSelectedTexture(), texturePreviewSourceImage as Bitmap);
         }
 
         private void UpdateTexturePreviewDisplay()
@@ -145,8 +149,108 @@ namespace TrinityModelViewer
             }
 
             var channel = GetSelectedTexturePreviewChannel();
+            bool hasTexture = GetSelectedTexture() != null;
             bool isChannelMode = channel is TexturePreviewChannel.R or TexturePreviewChannel.G or TexturePreviewChannel.B or TexturePreviewChannel.A;
-            materialTextureReplaceChannelButton.Enabled = isChannelMode && GetSelectedTexture() != null;
+            materialTextureReplaceChannelButton.Enabled = isChannelMode && hasTexture;
+
+            bool isFillMode = isChannelMode || channel is TexturePreviewChannel.Rgba or TexturePreviewChannel.RgbIgnoreAlpha;
+            if (materialTextureFillBlackButton != null) materialTextureFillBlackButton.Enabled = hasTexture && isFillMode;
+            if (materialTextureFillWhiteButton != null) materialTextureFillWhiteButton.Enabled = hasTexture && isFillMode;
+            if (materialTextureFillGrayButton != null) materialTextureFillGrayButton.Enabled = hasTexture && isFillMode;
+            if (materialTextureFillNormalButton != null) materialTextureFillNormalButton.Enabled = hasTexture && isFillMode;
+        }
+
+        private void UpdateTextureInfoLabel(Texture? texture, Bitmap? decodedBitmap)
+        {
+            if (materialTextureInfoLabel == null)
+            {
+                return;
+            }
+
+            if (texture == null)
+            {
+                materialTextureInfoLabel.Text = string.Empty;
+                return;
+            }
+
+            string res = decodedBitmap != null
+                ? $"{decodedBitmap.Width}x{decodedBitmap.Height}"
+                : "?x?";
+
+            var format = TryResolveTextureTypeLabel(texture);
+            materialTextureInfoLabel.Text = string.IsNullOrWhiteSpace(format) ? res : $"{res} {format}";
+        }
+
+        private static string TryResolveTextureTypeLabel(Texture texture)
+        {
+            if (texture == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                // CacheKey is: "<bestPath>|<preferredName>|<wrapS>|<wrapT>|<wrapR>"
+                // The first segment is typically a disk path for BNTX files, which we can probe for format metadata.
+                var key = texture.CacheKey ?? string.Empty;
+                var split = key.Split('|');
+                if (split.Length < 2)
+                {
+                    return string.Empty;
+                }
+
+                var path = split[0];
+                var preferredName = split[1];
+
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    return string.Empty;
+                }
+
+                var ext = Path.GetExtension(path);
+                if (!string.IsNullOrWhiteSpace(ext) &&
+                    (ext.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+                     ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                     ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                     ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return ext.TrimStart('.').ToUpperInvariant();
+                }
+
+                if (!ext.Equals(".bntx", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+                {
+                    return string.Empty;
+                }
+
+                if (!BNTX.TryGetUltimateTexFormatFromFile(path, preferredName, out var ultimateFormat, out _, out _))
+                {
+                    return "BNTX";
+                }
+
+                return ultimateFormat switch
+                {
+                    "BC7RgbaUnorm" => "BC7_UNORM",
+                    "BC7RgbaUnormSrgb" => "BC7_SRGB",
+                    "BC5RgUnorm" => "BC5_UNORM",
+                    "BC5RgSnorm" => "BC5_SNORM",
+                    "BC4RUnorm" => "BC4_UNORM",
+                    "BC4RSnorm" => "BC4_SNORM",
+                    "BC3RgbaUnorm" => "BC3_UNORM",
+                    "BC3RgbaUnormSrgb" => "BC3_SRGB",
+                    "BC1RgbaUnorm" => "BC1_UNORM",
+                    "BC1RgbaUnormSrgb" => "BC1_SRGB",
+                    "BC2RgbaUnorm" => "BC2_UNORM",
+                    "BC2RgbaUnormSrgb" => "BC2_SRGB",
+                    "BC6hRgbUfloat" => "BC6H_UF16",
+                    "Rgba8Unorm" => "RGBA8_UNORM",
+                    "Rgba8UnormSrgb" => "RGBA8_SRGB",
+                    _ => ultimateFormat
+                };
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private void materialTextureReplaceChannelButton_Click(object? sender, EventArgs e)
@@ -207,6 +311,65 @@ namespace TrinityModelViewer
             }
         }
 
+        private enum TextureFillPreset
+        {
+            Black,
+            White,
+            Gray,
+            Normal
+        }
+
+        private void materialTextureFillBlackButton_Click(object? sender, EventArgs e) => FillSelectedTexture(TextureFillPreset.Black);
+        private void materialTextureFillWhiteButton_Click(object? sender, EventArgs e) => FillSelectedTexture(TextureFillPreset.White);
+        private void materialTextureFillGrayButton_Click(object? sender, EventArgs e) => FillSelectedTexture(TextureFillPreset.Gray);
+        private void materialTextureFillNormalButton_Click(object? sender, EventArgs e) => FillSelectedTexture(TextureFillPreset.Normal);
+
+        private void FillSelectedTexture(TextureFillPreset preset)
+        {
+            var texture = GetSelectedTexture();
+            if (texture == null)
+            {
+                MessageBox.Show(this, "No texture selected.", "Fill Texture", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var channel = GetSelectedTexturePreviewChannel();
+            bool isAllowed = channel is TexturePreviewChannel.Rgba or TexturePreviewChannel.RgbIgnoreAlpha or TexturePreviewChannel.R or TexturePreviewChannel.G or TexturePreviewChannel.B or TexturePreviewChannel.A;
+            if (!isAllowed)
+            {
+                MessageBox.Show(this, "Select RGBA, RGB (ignore alpha), or a single channel (R/G/B/A) first.", "Fill Texture", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                using var source = texture.TryGetEditedBitmap(out var existingEdited) ? existingEdited : texture.LoadPreviewBitmap();
+                if (source == null)
+                {
+                    MessageBox.Show(this, "Texture could not be decoded.", "Fill Texture", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                using var filled = FillBitmap(source, channel, preset);
+
+                if (!texture.TryReplaceFromImage(filled, out var error))
+                {
+                    MessageBox.Show(this, $"Fill failed:\n{error}", "Fill Texture", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                texturePreviewCache.RemoveWhere(k => string.Equals(k, texture.CacheKey, StringComparison.OrdinalIgnoreCase));
+                textureChannelCache.RemoveWhere(k => k.StartsWith(texture.CacheKey, StringComparison.OrdinalIgnoreCase));
+                uvPreviewCache.RemoveWhere(k => k.Contains(texture.CacheKey, StringComparison.OrdinalIgnoreCase));
+
+                RequestMaterialPreviewUpdate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Fill failed:\n{ex.Message}", "Fill Texture", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private static Bitmap ResizeBitmapNearest(Bitmap source, int width, int height)
         {
             var output = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
@@ -215,6 +378,101 @@ namespace TrinityModelViewer
             g.PixelOffsetMode = PixelOffsetMode.Half;
             g.DrawImage(source, new Rectangle(0, 0, width, height));
             return output;
+        }
+
+        private static Bitmap FillBitmap(Bitmap baseBitmap, TexturePreviewChannel selectedChannel, TextureFillPreset preset)
+        {
+            var output = EnsureArgbBitmap(baseBitmap);
+            var rect = new Rectangle(0, 0, output.Width, output.Height);
+            var outData = output.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+            try
+            {
+                int stride = outData.Stride;
+                int len = Math.Abs(stride) * output.Height;
+                var bytes = new byte[len];
+                Marshal.Copy(outData.Scan0, bytes, 0, bytes.Length);
+
+                var (rFill, gFill, bFill, aFill) = GetPresetRgba(preset);
+                byte selectedValue = preset switch
+                {
+                    TextureFillPreset.Black => 0,
+                    TextureFillPreset.White => 255,
+                    TextureFillPreset.Gray => 128,
+                    TextureFillPreset.Normal => selectedChannel switch
+                    {
+                        TexturePreviewChannel.R => rFill,
+                        TexturePreviewChannel.G => gFill,
+                        TexturePreviewChannel.B => bFill,
+                        TexturePreviewChannel.A => aFill,
+                        _ => 0
+                    },
+                    _ => 0
+                };
+
+                for (int y = 0; y < output.Height; y++)
+                {
+                    int rowIndex = stride >= 0 ? y : (output.Height - 1 - y);
+                    int row = rowIndex * Math.Abs(stride);
+
+                    for (int x = 0; x < output.Width; x++)
+                    {
+                        int off = row + x * 4;
+
+                        switch (selectedChannel)
+                        {
+                            case TexturePreviewChannel.Rgba:
+                                bytes[off + 0] = bFill;
+                                bytes[off + 1] = gFill;
+                                bytes[off + 2] = rFill;
+                                bytes[off + 3] = aFill;
+                                break;
+
+                            case TexturePreviewChannel.RgbIgnoreAlpha:
+                                bytes[off + 0] = bFill;
+                                bytes[off + 1] = gFill;
+                                bytes[off + 2] = rFill;
+                                break;
+
+                            case TexturePreviewChannel.R:
+                                bytes[off + 2] = selectedValue;
+                                break;
+
+                            case TexturePreviewChannel.G:
+                                bytes[off + 1] = selectedValue;
+                                break;
+
+                            case TexturePreviewChannel.B:
+                                bytes[off + 0] = selectedValue;
+                                break;
+
+                            case TexturePreviewChannel.A:
+                                bytes[off + 3] = selectedValue;
+                                break;
+                        }
+                    }
+                }
+
+                Marshal.Copy(bytes, 0, outData.Scan0, bytes.Length);
+            }
+            finally
+            {
+                output.UnlockBits(outData);
+            }
+
+            return output;
+        }
+
+        private static (byte R, byte G, byte B, byte A) GetPresetRgba(TextureFillPreset preset)
+        {
+            return preset switch
+            {
+                TextureFillPreset.Black => (0, 0, 0, 255),
+                TextureFillPreset.White => (255, 255, 255, 255),
+                TextureFillPreset.Gray => (128, 128, 128, 255),
+                TextureFillPreset.Normal => (132, 132, 255, 255),
+                _ => (0, 0, 0, 255)
+            };
         }
 
         private static Bitmap ReplaceBitmapChannel(Bitmap baseBitmap, Bitmap channelBitmap, TexturePreviewChannel channel)

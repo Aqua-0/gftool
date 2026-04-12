@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
 using System.Linq;
+using System.IO;
 using Trinity.Core.Assets;
 using GFTool.Renderer.Core;
 
@@ -19,6 +20,16 @@ namespace GFTool.Renderer
 {
     public partial class RenderContext : IDisposable
     {
+        private BlendShapeAnimation? activeBlendShapeAnimation;
+        private string? activeBlendShapeSourcePath;
+        private string? lastBlendShapeApplyError;
+
+        private MeshVisibilityAnimation? activeVisibilityAnimation;
+        private string? activeVisibilitySourcePath;
+
+        private MaterialParameterAnimation? activeMaterialAnimation;
+        private string? activeMaterialSourcePath;
+
         public void PlayAnimation(Animation animation)
         {
             PlayAnimation(animation, null);
@@ -32,6 +43,10 @@ namespace GFTool.Renderer
             lastAnimationTicks = 0;
             animationPaused = false;
 
+            lastBlendShapeApplyError = null;
+            TryAttachBlendShapeAnimation(animation);
+            TryAttachVisibilityAnimation(animation);
+            TryAttachMaterialAnimation(animation);
             TryAttachModelsToPrimaryArmature(animation);
             if (MessageHandler.Instance.DebugLogsEnabled)
             {
@@ -64,6 +79,195 @@ namespace GFTool.Renderer
                     }
                 }
             }
+        }
+
+        private void TryAttachBlendShapeAnimation(Animation animation)
+        {
+            if (animation == null || string.IsNullOrWhiteSpace(animation.SourcePath))
+            {
+                activeBlendShapeAnimation = null;
+                activeBlendShapeSourcePath = null;
+                return;
+            }
+
+            string source = animation.SourcePath!;
+            string tracmPath;
+            try
+            {
+                tracmPath = Path.ChangeExtension(source, ".tracm");
+            }
+            catch
+            {
+                tracmPath = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(tracmPath) || !File.Exists(tracmPath))
+            {
+                activeBlendShapeAnimation = null;
+                activeBlendShapeSourcePath = null;
+                return;
+            }
+
+            if (string.Equals(activeBlendShapeSourcePath, tracmPath, StringComparison.OrdinalIgnoreCase) &&
+                activeBlendShapeAnimation != null)
+            {
+                return;
+            }
+
+            try
+            {
+                activeBlendShapeAnimation = BlendShapeAnimation.Load(tracmPath);
+                activeBlendShapeSourcePath = tracmPath;
+                if (MessageHandler.Instance.DebugLogsEnabled)
+                {
+                    MessageHandler.Instance.AddMessage(
+                        MessageType.LOG,
+                        $"[Anim] Loaded TRACM '{activeBlendShapeAnimation.Name}' file='{tracmPath}' frames={activeBlendShapeAnimation.FrameCount} fps={activeBlendShapeAnimation.FrameRate}");
+                }
+            }
+            catch (Exception ex)
+            {
+                activeBlendShapeAnimation = null;
+                activeBlendShapeSourcePath = null;
+                if (MessageHandler.Instance.DebugLogsEnabled)
+                {
+                    MessageHandler.Instance.AddMessage(MessageType.WARNING, $"[Anim] Failed to load TRACM (blendshape) '{tracmPath}': {ex.Message}");
+                }
+            }
+        }
+
+        private void TryAttachVisibilityAnimation(Animation animation)
+        {
+            if (animation == null || string.IsNullOrWhiteSpace(animation.SourcePath))
+            {
+                DetachVisibilityAnimation(resetMeshes: true);
+                return;
+            }
+
+            string source = animation.SourcePath!;
+            string tracmPath;
+            try
+            {
+                tracmPath = Path.ChangeExtension(source, ".tracm");
+            }
+            catch
+            {
+                tracmPath = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(tracmPath) || !File.Exists(tracmPath))
+            {
+                DetachVisibilityAnimation(resetMeshes: true);
+                return;
+            }
+
+            if (string.Equals(activeVisibilitySourcePath, tracmPath, StringComparison.OrdinalIgnoreCase) &&
+                activeVisibilityAnimation != null)
+            {
+                return;
+            }
+
+            DetachVisibilityAnimation(resetMeshes: true);
+
+            if (!MeshVisibilityAnimation.TryLoad(tracmPath, out var vis))
+            {
+                activeVisibilityAnimation = null;
+                activeVisibilitySourcePath = null;
+                return;
+            }
+
+            activeVisibilityAnimation = vis;
+            activeVisibilitySourcePath = tracmPath;
+            if (MessageHandler.Instance.DebugLogsEnabled)
+            {
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Anim] Loaded visibility TRACM '{vis!.Name}' file='{tracmPath}' frames={vis.FrameCount} fps={vis.FrameRate} meshes={vis.ControlledMeshNames.Count}");
+            }
+        }
+
+        private void DetachVisibilityAnimation(bool resetMeshes)
+        {
+            if (resetMeshes && activeVisibilityAnimation != null)
+            {
+                foreach (var model in SceneGraph.Instance.GetRoot().children.OfType<Model>())
+                {
+                    activeVisibilityAnimation.ResetControlledMeshesToVisible(model);
+                }
+            }
+
+            activeVisibilityAnimation = null;
+            activeVisibilitySourcePath = null;
+        }
+
+        private void TryAttachMaterialAnimation(Animation animation)
+        {
+            if (animation == null || string.IsNullOrWhiteSpace(animation.SourcePath))
+            {
+                DetachMaterialAnimation(resetMaterials: true);
+                return;
+            }
+
+            string source = animation.SourcePath!;
+            string tracmPath;
+            try
+            {
+                tracmPath = Path.ChangeExtension(source, ".tracm");
+            }
+            catch
+            {
+                tracmPath = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(tracmPath) || !File.Exists(tracmPath))
+            {
+                DetachMaterialAnimation(resetMaterials: true);
+                return;
+            }
+
+            if (string.Equals(activeMaterialSourcePath, tracmPath, StringComparison.OrdinalIgnoreCase) &&
+                activeMaterialAnimation != null)
+            {
+                return;
+            }
+
+            DetachMaterialAnimation(resetMaterials: true);
+
+            if (!MaterialParameterAnimation.TryLoad(tracmPath, out var matAnim))
+            {
+                activeMaterialAnimation = null;
+                activeMaterialSourcePath = null;
+                return;
+            }
+
+            activeMaterialAnimation = matAnim;
+            activeMaterialSourcePath = tracmPath;
+            if (MessageHandler.Instance.DebugLogsEnabled)
+            {
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Anim] Loaded material TRACM '{matAnim!.Name}' file='{tracmPath}' frames={matAnim.FrameCount} fps={matAnim.FrameRate} " +
+                    $"float={matAnim.FloatChannelCount} float4={matAnim.Float4ChannelCount}");
+
+                foreach (var line in matAnim.GetDebugSummaryLines(maxLines: 6))
+                {
+                    MessageHandler.Instance.AddMessage(MessageType.LOG, line);
+                }
+            }
+        }
+
+        private void DetachMaterialAnimation(bool resetMaterials)
+        {
+            if (resetMaterials && activeMaterialAnimation != null)
+            {
+                foreach (var model in SceneGraph.Instance.GetRoot().children.OfType<Model>())
+                {
+                    activeMaterialAnimation.ResetOverridesForModel(model);
+                }
+            }
+
+            activeMaterialAnimation = null;
+            activeMaterialSourcePath = null;
         }
 
         private void TryAttachModelsToPrimaryArmature(Animation animation)
@@ -159,10 +363,20 @@ namespace GFTool.Renderer
             animationTimeSeconds = 0;
             lastAnimationTicks = 0;
             animationPaused = false;
+            activeBlendShapeAnimation = null;
+            activeBlendShapeSourcePath = null;
+            lastBlendShapeApplyError = null;
+            DetachVisibilityAnimation(resetMeshes: true);
+            DetachMaterialAnimation(resetMaterials: true);
             var models = SceneGraph.Instance.GetRoot().children.OfType<Model>().ToList();
             foreach (var model in models)
             {
                 model.ResetPose();
+                if (model.HasCpuFullMorphTargets)
+                {
+                    model.ResetCpuFullMorphWeights();
+                    model.TryApplyCpuFullMorphs(out _);
+                }
                 model.SetArmatureOverride(null);
             }
         }

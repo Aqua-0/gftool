@@ -203,46 +203,25 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             // Animation scale tracks are local scale values; applying them in world space introduces shearing/stretching.
             var localScale = scale ?? baseScale;
 
-            var matrix = BuildLocalMatrix(localScale, rot, loc, bone.ScalePivot, bone.RotatePivot);
-            var matrixNoRot = BuildLocalMatrix(localScale, Quaternion.Identity, loc, bone.ScalePivot, bone.RotatePivot);
+            Matrix4 matrix;
+            Matrix4 matrixNoRot;
 
-            Matrix4 world = matrix;
+            Matrix4 world;
             if (bone.ParentIndex >= 0 && bone.ParentIndex < Bones.Count && bone.ParentIndex != index)
             {
                 var parentWorld = ComputePoseWorld(bone.ParentIndex, animation, fallbackAnimation, frame, poseWorld, poseWorldNoRot, poseLocal, computed);
                 if (bone.UseSegmentScaleCompensate)
                 {
-                    var parent = Bones[bone.ParentIndex];
-                    Matrix4 parentLocal = parentWorld;
-                    if (parent.ParentIndex >= 0 && parent.ParentIndex < Bones.Count && parent.ParentIndex != bone.ParentIndex)
-                    {
-                        var grandParentWorld = ComputePoseWorld(parent.ParentIndex, animation, fallbackAnimation, frame, poseWorld, poseWorldNoRot, poseLocal, computed);
-                        if (TryInvert(grandParentWorld, out var invGrandParent))
-                        {
-                            parentLocal = parentWorld * invGrandParent;
-                        }
-                        else
-                        {
-                            WarnSingularInvert(
-                                context: "SegmentScaleCompensate",
-                                boneIndex: index,
-                                boneName: bone.Name,
-                                animation: animation,
-                                frame: frame,
-                                detail: $"parent={parent.Name}({bone.ParentIndex}) grandParent={Bones[parent.ParentIndex].Name}({parent.ParentIndex})");
-                            parentLocal = parentWorld;
-                        }
-                    }
-
-                    var parentScale = parentLocal.ExtractScale();
-                    matrix *= Matrix4.CreateScale(
-                        parentScale.X != 0f ? 1f / parentScale.X : 1f,
-                        parentScale.Y != 0f ? 1f / parentScale.Y : 1f,
-                        parentScale.Z != 0f ? 1f / parentScale.Z : 1f);
-                    matrixNoRot *= Matrix4.CreateScale(
-                        parentScale.X != 0f ? 1f / parentScale.X : 1f,
-                        parentScale.Y != 0f ? 1f / parentScale.Y : 1f,
-                        parentScale.Z != 0f ? 1f / parentScale.Z : 1f);
+                    // Use the parent bone’s raw local scale channels (rest/anim), not a decomposed scale from a
+                    // matrix that may already have SSC applied.
+                    var parentScale = GetEffectiveLocalScale(bone.ParentIndex, animation, fallbackAnimation, frame);
+                    matrix = BuildLocalMatrixWithParentScaleInverse(localScale, rot, loc, bone.ScalePivot, bone.RotatePivot, parentScale);
+                    matrixNoRot = BuildLocalMatrixWithParentScaleInverse(localScale, Quaternion.Identity, loc, bone.ScalePivot, bone.RotatePivot, parentScale);
+                }
+                else
+                {
+                    matrix = BuildLocalMatrix(localScale, rot, loc, bone.ScalePivot, bone.RotatePivot);
+                    matrixNoRot = BuildLocalMatrix(localScale, Quaternion.Identity, loc, bone.ScalePivot, bone.RotatePivot);
                 }
                 var parentEffective = bone.IgnoreParentRotation ? poseWorldNoRot[bone.ParentIndex] : parentWorld;
                 world = matrix * parentEffective;
@@ -250,6 +229,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
             else
             {
+                matrix = BuildLocalMatrix(localScale, rot, loc, bone.ScalePivot, bone.RotatePivot);
+                matrixNoRot = BuildLocalMatrix(localScale, Quaternion.Identity, loc, bone.ScalePivot, bone.RotatePivot);
+                world = matrix;
                 poseWorldNoRot[index] = matrixNoRot;
             }
 
@@ -257,6 +239,31 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             poseWorld[index] = world;
             poseLocal[index] = matrix;
             return world;
+        }
+
+        private Vector3 GetEffectiveLocalScale(int boneIndex, Animation animation, Animation? fallbackAnimation, float frame)
+        {
+            if (boneIndex < 0 || boneIndex >= Bones.Count)
+            {
+                return Vector3.One;
+            }
+
+            var bone = Bones[boneIndex];
+            var baseScale = bone.RestScale;
+
+            Vector3? scaleA = null;
+            if (animation != null && animation.TryGetPose(bone.Name, frame, out var s, out _, out _))
+            {
+                scaleA = s;
+            }
+
+            Vector3? scaleB = null;
+            if (fallbackAnimation != null && fallbackAnimation.TryGetPose(bone.Name, frame, out var s2, out _, out _))
+            {
+                scaleB = s2;
+            }
+
+            return scaleA ?? scaleB ?? baseScale;
         }
 
         public int GetVisibleParentIndex(int index)
@@ -308,13 +315,55 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 return Array.Empty<int>();
             }
 
-            // Joint info index space is treated as the palette. palette[jointId] maps to a node index.
-            // Dual skeleton cases use `skinning_palette_offset`, but base and local are not merged here.
-            var palette = new int[jointInfoToNode.Length];
+            // The engine builds a "skinning palette" as a compact index space over *skinning influencer* nodes,
+            // optionally starting at TRSKL.SkinningPaletteOffset when multiple skeletons are connected.
+            //
+            // Vertex blend indices can be authored in either:
+            // - joint-info index space (jointId -> node index), or
+            // - skinning-palette index space (skinningIndex -> node index).
+            //
+            // We keep both mappings available:
+            // - Joint-info mapping is provided by Armature.MapJointInfoIndex(...)
+            // - This function provides the skinning-palette mapping used by BlendIndexRemapMode.SkinningPalette.
+            int influencerCount = 0;
+            for (int i = 0; i < Bones.Count; i++)
+            {
+                if (Bones[i].Skinning)
+                {
+                    influencerCount++;
+                }
+            }
+
+            if (influencerCount <= 0)
+            {
+                // Fallback to joint-info mapping when we have no influencer flags.
+                var fallback = new int[jointInfoToNode.Length];
+                for (int i = 0; i < fallback.Length; i++)
+                {
+                    fallback[i] = jointInfoToNode[i];
+                }
+                return fallback;
+            }
+
+            int start = skinningPaletteOffset >= 0 ? skinningPaletteOffset : 0;
+            var palette = new int[start + influencerCount];
             for (int i = 0; i < palette.Length; i++)
             {
-                palette[i] = jointInfoToNode[i];
+                palette[i] = -1;
             }
+
+            int dst = start;
+            for (int i = 0; i < Bones.Count; i++)
+            {
+                if (!Bones[i].Skinning)
+                {
+                    continue;
+                }
+
+                palette[dst] = i;
+                dst++;
+            }
+
             return palette;
         }
 

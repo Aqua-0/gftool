@@ -1,5 +1,6 @@
 using GFTool.Renderer.Core;
 using GFTool.Renderer.Scene.GraphicsObjects;
+using BnTxx;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -105,7 +106,77 @@ namespace TrinityModelViewer
                         return;
                     }
 
-                    File.Copy(sourcePath, outPath, overwrite: true);
+                    bool wantsUltimateTex = settings.UseUltimateTexForBntxExport &&
+                                            !string.IsNullOrWhiteSpace(settings.UltimateTexCliPath) &&
+                                            File.Exists(settings.UltimateTexCliPath);
+
+                    if (texture.IsEdited)
+                    {
+                        if (wantsUltimateTex && texture.TryGetEditedBitmap(out var edited))
+                        {
+                            using (edited)
+                            {
+                                var preferredName = Path.GetFileNameWithoutExtension(texture.SourceFile);
+                                string fmtError = string.Empty;
+                                string encodeError = string.Empty;
+                                if (!BNTX.TryGetUltimateTexFormatFromFile(sourcePath, preferredName, out var fmt, out var noMipmaps, out fmtError) ||
+                                    !UltimateTexCli.TryEncodeBntxFromBitmap(edited, settings.UltimateTexCliPath, outPath, fmt, noMipmaps, sourcePath, out encodeError))
+                                {
+                                    var err = string.IsNullOrWhiteSpace(encodeError) ? fmtError : encodeError;
+                                    var fallback = MessageBox.Show(
+                                        this,
+                                        $"BNTX encode failed:\n{err}\n\nExport PNG instead?",
+                                        "Export Texture",
+                                        MessageBoxButtons.YesNo,
+                                        MessageBoxIcon.Warning);
+                                    if (fallback != DialogResult.Yes)
+                                    {
+                                        return;
+                                    }
+
+                                    outPath = Path.ChangeExtension(outPath, ".png");
+                                    edited.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var choice = MessageBox.Show(
+                                this,
+                                "This texture is edited. Exporting as BNTX without an encoder will ignore edits.\n\n" +
+                                "Yes: export original BNTX\n" +
+                                "No: export PNG (keeps edits)\n" +
+                                "Cancel: abort",
+                                "Export Texture",
+                                MessageBoxButtons.YesNoCancel,
+                                MessageBoxIcon.Information);
+
+                            if (choice == DialogResult.Cancel)
+                            {
+                                return;
+                            }
+
+                            if (choice == DialogResult.No)
+                            {
+                                outPath = Path.ChangeExtension(outPath, ".png");
+                                using var bmp = texture.LoadPreviewBitmap();
+                                if (bmp == null)
+                                {
+                                    MessageBox.Show(this, "Texture could not be decoded.", "Export Texture", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    return;
+                                }
+                                bmp.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                            }
+                            else
+                            {
+                                File.Copy(sourcePath, outPath, overwrite: true);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        File.Copy(sourcePath, outPath, overwrite: true);
+                    }
                 }
                 else
                 {

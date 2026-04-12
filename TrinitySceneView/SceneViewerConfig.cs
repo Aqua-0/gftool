@@ -6,11 +6,20 @@ namespace TrinitySceneView
     internal sealed class SceneViewerConfig
     {
         public string? AssetRoot { get; set; }
+        public string? LastSceneDirectory { get; set; }
         public bool DebugLogs { get; set; } = false;
         public bool DarkMode { get; set; } = false;
         public bool SpawnModelsAtOrigin { get; set; } = false;
         public bool LargeClipPlanes { get; set; } = true;
         public bool RotateModels180X { get; set; } = false;
+        public bool RotateModels180Y { get; set; } = false;
+        public bool RotateActors180X { get; set; } = false;
+        public bool RotateActors180Y { get; set; } = false;
+        public bool ApplySceneRotationToActors { get; set; } = true;
+        public bool ApplySceneRotationToEventCamera { get; set; } = true;
+        public bool LoadAllLods { get; set; } = false;
+        public int HeightFieldMaxSegments { get; set; } = 400_000;
+        public bool AdditiveLoads { get; set; } = false;
 
         public static SceneViewerConfig Load()
         {

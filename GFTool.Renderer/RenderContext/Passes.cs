@@ -2,6 +2,7 @@ using GFTool.Renderer.Core;
 using GFTool.Renderer.Core.Graphics;
 using GFTool.Renderer.Scene;
 using GFTool.Renderer.Scene.GraphicsObjects;
+using GFTool.Renderer.Scene.GraphicsObjects.Particles;
 using OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -57,19 +58,24 @@ namespace GFTool.Renderer
         private void LightingPass()
         {
             RenderSsao();
+            ShadowFactorPass();
         }
 
         private void FinalPass()
         {
-            gbuffer.Draw(ssaoBlurTexture, ssaoAvailable, camera.NearPlane, camera.FarPlane, camera.viewMat, camera.projMat, camera.Transform.Position);
+            RenderOptions.CameraNear = camera.NearPlane;
+            RenderOptions.CameraFar = camera.FarPlane;
+            gbuffer.Draw(ssaoBlurTexture, ssaoAvailable, shadowFactorTex, RenderOptions.EnableDirectionalShadows, camera.NearPlane, camera.FarPlane, camera.viewMat, camera.projMat, camera.Transform.Position);
         }
 
         private void TransparentPass()
         {
             RenderOptions.TransparentPass = true;
             Material.ResetTransparentBlendStateCache();
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Enable(EnableCap.DepthTest);
             GL.DepthMask(false);
 
             foreach (var c in SceneGraph.Instance.GetRoot().children)
@@ -119,6 +125,10 @@ namespace GFTool.Renderer
                 {
                     grid.Draw(camera.viewMat, camera.projMat);
                 }
+                else if (c is HeightFieldMesh hf)
+                {
+                    hf.Draw(camera.viewMat, camera.projMat);
+                }
             }
         }
 
@@ -141,6 +151,23 @@ namespace GFTool.Renderer
             GL.DepthFunc(DepthFunction.Lequal);
             GL.DepthMask(true);
             RenderOptions.OutlinePass = false;
+        }
+
+        private void ParticlePass()
+        {
+            RenderOptions.ParticlePass = true;
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.Enable(EnableCap.DepthTest);
+
+            foreach (var c in SceneGraph.Instance.GetRoot().children)
+            {
+                if (c is IParticleObject)
+                {
+                    c.Draw(camera.viewMat, camera.projMat);
+                }
+            }
+
+            RenderOptions.ParticlePass = false;
         }
 
     }

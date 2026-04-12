@@ -177,6 +177,16 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 activeShader.SetVector4IfExists("UVScaleOffset", new Vector4(1, 1, 0, 0));
             }
 
+            if (!vec4Params.Any(p => string.Equals(p.Name, "UVScaleOffset1", StringComparison.OrdinalIgnoreCase)))
+            {
+                activeShader.SetVector4IfExists("UVScaleOffset1", new Vector4(1, 1, 0, 0));
+            }
+
+            if (!vec4Params.Any(p => string.Equals(p.Name, "UVScaleOffset3", StringComparison.OrdinalIgnoreCase)))
+            {
+                activeShader.SetVector4IfExists("UVScaleOffset3", new Vector4(1, 1, 0, 0));
+            }
+
             if (!vec4Params.Any(p => string.Equals(p.Name, "UVScaleOffsetNormal", StringComparison.OrdinalIgnoreCase)))
             {
                 activeShader.SetVector4IfExists("UVScaleOffsetNormal", new Vector4(1, 1, 0, 0));
@@ -221,6 +231,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             bool hasUvIndexAo = TryGetUvIndex("UVIndexAO", out int uvIndexAo);
             activeShader.SetBoolIfExists("HasUVIndexAO", hasUvIndexAo);
             activeShader.SetIntIfExists("UVIndexAO", hasUvIndexAo ? uvIndexAo : 0);
+
+            bool hasUvIndexLayer1 = TryGetUvIndex("UVIndexLayer1", out int uvIndexLayer1);
+            activeShader.SetBoolIfExists("HasUVIndexLayer1", hasUvIndexLayer1);
+            activeShader.SetIntIfExists("UVIndexLayer1", hasUvIndexLayer1 ? uvIndexLayer1 : -1);
+
+            bool hasUvIndexLayer3 = TryGetUvIndex("UVIndexLayer3", out int uvIndexLayer3);
+            activeShader.SetBoolIfExists("HasUVIndexLayer3", hasUvIndexLayer3);
+            activeShader.SetIntIfExists("UVIndexLayer3", hasUvIndexLayer3 ? uvIndexLayer3 : -1);
 
             bool hasUvIndexIepHeight = TryGetUvIndex("UVIndexInsideEmissionParallaxHeight", out int uvIndexIepHeight);
             activeShader.SetBoolIfExists("HasUVIndexInsideEmissionParallaxHeight", hasUvIndexIepHeight);
@@ -321,6 +339,10 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 if (!HasFloatParam("SSSScatterPower")) activeShader.SetFloatIfExists("SSSScatterPower", 2.0f);
                 if (!HasFloatParam("SSSEmission")) activeShader.SetFloatIfExists("SSSEmission", 1.0f);
                 if (!HasFloatParam("SSSMaskStrength")) activeShader.SetFloatIfExists("SSSMaskStrength", 1.0f);
+                if (!HasFloatParam("SSSMaskScale")) activeShader.SetFloatIfExists("SSSMaskScale", 1.0f);
+                if (!HasFloatParam("SSSMaskOffset")) activeShader.SetFloatIfExists("SSSMaskOffset", 0.0f);
+                if (!HasFloatParam("Reflectance")) activeShader.SetFloatIfExists("Reflectance", 0.04f);
+                if (!HasFloatParam("Roughness")) activeShader.SetFloatIfExists("Roughness", 0.5f);
             }
 
             // Only apply the BaseColor=Layer1 fallback when the BaseColorMap is a placeholder mask texture.
@@ -368,7 +390,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 "Eye" => "Eye",
                 "EyeClearCoat" => "EyeClearCoat",
                 "Unlit" => "Unlit",
-                "FresnelEffect" => "Standard",
+                "FresnelEffect" => "FresnelEffect",
                 "FresnelBlend" => "FresnelBlend",
                 // TODO Make more shaders.
                 _ => name
@@ -414,6 +436,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             // Many TRMTRs omit explicit `Enable*Map` options, which previously caused textures (notably BaseColorMap)
             // to be ignored and resulted in flat/incorrect shading.
             activeShader.SetBoolIfExists("EnableBaseColorMap", textureNames.Contains("BaseColorMap") && OptionEnabled("EnableBaseColorMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableBaseColorMap1", textureNames.Contains("BaseColorMap1") && OptionEnabled("EnableBaseColorMap1", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableBaseColorMap2", textureNames.Contains("BaseColorMap2") && OptionEnabled("EnableBaseColorMap2", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableBaseColorMap3", textureNames.Contains("BaseColorMap3") && OptionEnabled("EnableBaseColorMap3", defaultValue: true));
             activeShader.SetBoolIfExists("EnableLayerMaskMap", enableLayerMask);
             activeShader.SetBoolIfExists("EnableNormalMap", RenderOptions.EnableNormalMaps && textureNames.Contains("NormalMap") && OptionEnabled("EnableNormalMap", defaultValue: true));
             activeShader.SetBoolIfExists("EnableNormalMap1", RenderOptions.EnableNormalMaps && textureNames.Contains("NormalMap1") && OptionEnabled("EnableNormalMap1", defaultValue: true));
@@ -422,10 +447,17 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             activeShader.SetBoolIfExists("EnableRoughnessMap1", textureNames.Contains("RoughnessMap1") && OptionEnabled("EnableRoughnessMap1", defaultValue: true));
             activeShader.SetBoolIfExists("EnableRoughnessMap2", textureNames.Contains("RoughnessMap2") && OptionEnabled("EnableRoughnessMap2", defaultValue: true));
             activeShader.SetBoolIfExists("EnableMetallicMap", textureNames.Contains("MetallicMap") && OptionEnabled("EnableMetallicMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableMetallicMap1", textureNames.Contains("MetallicMap1") && OptionEnabled("EnableMetallicMap1", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableMetallicMap2", textureNames.Contains("MetallicMap2") && OptionEnabled("EnableMetallicMap2", defaultValue: true));
             activeShader.SetBoolIfExists("EnableAOMap", RenderOptions.EnableAO && textureNames.Contains("AOMap") && OptionEnabled("EnableAOMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableAOMap1", RenderOptions.EnableAO && textureNames.Contains("AOMap1") && OptionEnabled("EnableAOMap1", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableAOMap2", RenderOptions.EnableAO && textureNames.Contains("AOMap2") && OptionEnabled("EnableAOMap2", defaultValue: true));
             activeShader.SetBoolIfExists("EnableDetailMaskMap", textureNames.Contains("DetailMaskMap") && OptionEnabled("EnableDetailMaskMap", defaultValue: true));
             activeShader.SetBoolIfExists("EnableSSSMaskMap", textureNames.Contains("SSSMaskMap") && OptionEnabled("EnableSSSMaskMap", defaultValue: true));
             activeShader.SetBoolIfExists("EnableHairFlowMap", textureNames.Contains("HairFlowMap") && OptionEnabled("EnableHairFlowMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableFlowMap", textureNames.Contains("FlowMap") && OptionEnabled("EnableFlowMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableFoamMaskMap", textureNames.Contains("FoamMaskMap") && OptionEnabled("EnableFoamMaskMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnableDisplacementMap", textureNames.Contains("DisplacementMap") && OptionEnabled("EnableDisplacementMap", defaultValue: true));
 
             // These maps are frequently present without explicit shader options (notably on IkCharacter).
             // Default them to enabled when the texture exists to match common import behavior.
@@ -441,6 +473,26 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 textureNames.Contains("ShadowingColorMaskMap") && OptionEnabled("EnableShadowingColorMaskMap", defaultValue: defaultIkCharacterOn));
             activeShader.SetBoolIfExists("EnableRimLightMaskMap", textureNames.Contains("RimLightMaskMap") && OptionEnabled("EnableRimLightMaskMap", defaultValue: true));
             activeShader.SetBoolIfExists("EnableOpacityMap1", textureNames.Contains("OpacityMap1"));
+            activeShader.SetBoolIfExists("EnablePackedMap", textureNames.Contains("PackedMap") && OptionEnabled("EnablePackedMap", defaultValue: true));
+            activeShader.SetBoolIfExists("EnablePackedMap1", textureNames.Contains("PackedMap1") && OptionEnabled("EnablePackedMap1", defaultValue: true));
+            activeShader.SetBoolIfExists("EnablePackedMap2", textureNames.Contains("PackedMap2") && OptionEnabled("EnablePackedMap2", defaultValue: true));
+            bool enableEmissionColorMap = textureNames.Contains("EmissionColorMap") && OptionEnabled("EnableEmissionColorMap", defaultValue: true);
+            activeShader.SetBoolIfExists("EnableEmissionColorMap", enableEmissionColorMap);
+
+            bool HasAnyFloatParam(string name) =>
+                floatParams.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ||
+                ShaderParams.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            bool HasAnyVec4Param(string name) =>
+                vec4Params.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            if (enableEmissionColorMap &&
+                (string.Equals(shaderKey, "Standard", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(shaderKey, "Transparent", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!HasAnyFloatParam("EmissionIntensity")) activeShader.SetFloatIfExists("EmissionIntensity", 1.0f);
+                if (!HasAnyVec4Param("EmissionColor")) activeShader.SetVector4IfExists("EmissionColor", Vector4.One);
+            }
 
             activeShader.SetBoolIfExists("EnableEyeOptions", OptionEnabledByDefaultOff("EnableEyeOptions"));
             activeShader.SetBoolIfExists("EnableHighlight", OptionEnabledByDefaultOff("EnableHighlight"));

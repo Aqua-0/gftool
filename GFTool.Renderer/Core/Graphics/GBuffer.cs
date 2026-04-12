@@ -25,12 +25,15 @@ namespace GFTool.Renderer.Core.Graphics
             DISPLAY_SPECULAR,
             DISPLAY_AO,
             DISPLAY_DEPTH,
+            DISPLAY_EMISSION,
             DISPLAY_TOON,
             DISPLAY_LEGACY
         }
         private int fbo = 0;
         private int[] textures;
         private int depthTex;
+        private int finalFbo;
+        private int finalColorTex;
 
         private int screenGeom;
         private int quadVBO;
@@ -97,7 +100,33 @@ namespace GFTool.Renderer.Core.Graphics
             GL.DrawBuffers(attachments.Length, attachments);
 
             BindDefaultFB();
+            CreateFinalColorTarget();
             CreateScreenQuad();
+        }
+
+        private void CreateFinalColorTarget()
+        {
+            GL.GenFramebuffers(1, out finalFbo);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, finalFbo);
+
+            GL.GenTextures(1, out finalColorTex);
+            GL.BindTexture(TextureTarget.Texture2D, finalColorTex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, finalColorTex, 0);
+
+            GL.DrawBuffer(DrawBufferMode.ColorAttachment0);
+            GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
+
+            if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete)
+            {
+                throw new Exception("Final framebuffer is not complete: " + GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer).ToString());
+            }
+
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         }
 
         public void BindFBO()
@@ -153,12 +182,12 @@ namespace GFTool.Renderer.Core.Graphics
         }
 
 
-        public void Draw(int ssaoTexture, bool enableSsao, float cameraNear, float cameraFar, Matrix4 view, Matrix4 projection, Vector3 cameraPos)
+        public void Draw(int ssaoTexture, bool enableSsao, int shadowFactorTexture, bool enableShadows, float cameraNear, float cameraFar, Matrix4 view, Matrix4 projection, Vector3 cameraPos)
         {
-            // FBO is bound for read and the default framebuffer is bound for write
+            // GBuffer is bound for read and the post-deferred color target is bound for write
             GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fbo);
-            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0); //Bind default framebuf for write
-            Clear();
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, finalFbo);
+            GL.Clear(ClearBufferMask.ColorBufferBit);
 
             var gbShader = ShaderPool.Instance.GetShader("gbuffer");
             if (gbShader == null)
@@ -168,8 +197,10 @@ namespace GFTool.Renderer.Core.Graphics
             }
             gbShader.Bind();
 
-            // Copy depth buffer over for grid/overlay depth testing
+            // Copy depth buffer over for grid/overlay depth testing (into default framebuffer)
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
             GL.BlitFramebuffer(0, 0, width, height, 0, 0, width, height, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, finalFbo);
 
             Matrix4.Invert(view, out var invView);
             Matrix4.Invert(projection, out var invProjection);
@@ -189,7 +220,8 @@ namespace GFTool.Renderer.Core.Graphics
                 "specularTexture",
                 "aoTexture",
                 "ssaoTexture",
-                "depthTexture"
+                "depthTexture",
+                "shadowFactorTexture"
             };
 
             //Attach frames
@@ -205,12 +237,22 @@ namespace GFTool.Renderer.Core.Graphics
                 {
                     GL.BindTexture(TextureTarget.Texture2D, depthTex);
                 }
+                else if (i == (int)GBufferType.GBUFFER_MAX + 2)
+                {
+                    GL.BindTexture(TextureTarget.Texture2D, shadowFactorTexture);
+                }
                 else
                 {
                     GL.BindTexture(TextureTarget.Texture2D, textures[i]);
                 }
                 gbShader.SetInt(frame, i++);
             }
+
+            GL.ActiveTexture(TextureUnit.Texture0 + i);
+            GL.BindTexture(TextureTarget.TextureCubeMap, RenderOptions.EnvCubemapTextureId);
+            gbShader.SetInt("EnvCubemap", i++);
+            gbShader.SetFloat("EnvMaxLod", RenderOptions.EnvMaxLod);
+            gbShader.SetFloat("EnvIntensity", RenderOptions.EnvIntensity);
 
             //Set bools for visibility
             gbShader.SetBool("useAlbedo", DisplayMode == DisplayType.DISPLAY_ALL || DisplayMode == DisplayType.DISPLAY_ALBEDO || DisplayMode == DisplayType.DISPLAY_TOON || DisplayMode == DisplayType.DISPLAY_LEGACY);
@@ -221,6 +263,8 @@ namespace GFTool.Renderer.Core.Graphics
             gbShader.SetBool("useToon", DisplayMode == DisplayType.DISPLAY_TOON);
             gbShader.SetBool("useLegacy", DisplayMode == DisplayType.DISPLAY_LEGACY);
             gbShader.SetBool("useDepth", DisplayMode == DisplayType.DISPLAY_DEPTH);
+            gbShader.SetBool("useEmission", DisplayMode == DisplayType.DISPLAY_EMISSION);
+            gbShader.SetBool("useShadows", enableShadows && shadowFactorTexture != 0);
             gbShader.SetFloat("CameraNear", cameraNear);
             gbShader.SetFloat("CameraFar", cameraFar);
 
@@ -232,6 +276,14 @@ namespace GFTool.Renderer.Core.Graphics
             GL.Enable(EnableCap.DepthTest);
 
             gbShader.Unbind();
+
+            // Present post-deferred color to the default framebuffer
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, finalFbo);
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+            GL.BlitFramebuffer(0, 0, width, height, 0, 0, width, height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+
+            RenderOptions.SceneColorTextureId = finalColorTex;
+            RenderOptions.SceneDepthTextureId = depthTex;
         }
 
         public void RenderFullscreenQuad()
@@ -248,6 +300,10 @@ namespace GFTool.Renderer.Core.Graphics
             GL.DeleteTexture(depthTex);
             foreach (var tex in textures)
                 GL.DeleteTexture(tex);
+            if (finalFbo != 0)
+                GL.DeleteFramebuffer(finalFbo);
+            if (finalColorTex != 0)
+                GL.DeleteTexture(finalColorTex);
         }
     }
 }

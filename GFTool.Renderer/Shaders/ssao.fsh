@@ -52,7 +52,9 @@ void main()
         float sampleLinear = LinearizeDepth(sampleDepth);
         float depthDelta = centerDepth - sampleLinear;
         float rangeWeight = smoothstep(0.0, radius * 0.5, depthDelta);
-        occlusion += step(bias, depthDelta) * rangeWeight;
+        vec3 dir = normalize(vec3(offsets[i], 0.75));
+        float normalWeight = clamp(dot(normalize(n), dir), 0.0, 1.0);
+        occlusion += step(bias, depthDelta) * rangeWeight * normalWeight;
     }
 
     float ao = 1.0 - (occlusion / 8.0);

@@ -230,14 +230,26 @@ namespace TrinityFileExplorer
             var folderBrowser = new FolderBrowserDialog();
             if (folderBrowser.ShowDialog() != DialogResult.OK) return;
 
-            ExplorerSettings.SetRomFSPath(folderBrowser.SelectedPath);
+            var selectedRomfsPath = folderBrowser.SelectedPath;
+            var trpfdPath = Path.Join(selectedRomfsPath, FilepathSettings.trpfdRel);
+            var trpfsPath = Path.Join(selectedRomfsPath, FilepathSettings.trpfsRel);
 
-            if (InitializeFileDescriptor(Path.Join(ExplorerSettings.GetRomFSPath(), FilepathSettings.trpfdRel)) != DialogResult.OK)
+            if (InitializeFileDescriptor(trpfdPath) != DialogResult.OK)
             {
                 return;
             }
 
+            if (InitializeFileSystem(trpfsPath) != DialogResult.OK)
+            {
+                return;
+            }
+
+            ExplorerSettings.SetRomFSPath(selectedRomfsPath);
             ExplorerSettings.Save();
+
+            Text = $"Trinity Explorer - Viewing ROMFS - {ExplorerSettings.GetRomFSPath()}";
+            exportable = hasOodleDll;
+            NavigateTo();
         }
         private void fileView_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
         {

@@ -50,16 +50,19 @@ namespace TrinityModelViewer.Export
                 switch (el.Usage)
                 {
                     case TRVertexUsage.POSITION:
-                        WriteVector3(dst, offset, el.Format, prim.Positions[v]);
+                        if (el.Layer == 0)
+                        {
+                            WriteVector3(dst, offset, el.Format, prim.Positions[v]);
+                        }
                         break;
                     case TRVertexUsage.NORMAL:
-                        if (hasNormals)
+                        if (el.Layer == 0 && hasNormals)
                         {
                             WriteNormal(dst, offset, el.Format, prim.Normals[v]);
                         }
                         break;
                     case TRVertexUsage.TANGENT:
-                        if (hasTangents)
+                        if (el.Layer == 0 && hasTangents)
                         {
                             WriteTangent(dst, offset, el.Format, prim.Tangents[v]);
                         }
@@ -68,7 +71,7 @@ namespace TrinityModelViewer.Export
                         // Not currently exported from glTF; preserve template data.
                         break;
                     case TRVertexUsage.COLOR:
-                        if (hasColors)
+                        if (el.Layer == 0 && hasColors)
                         {
                             WriteColor(dst, offset, el.Format, prim.Colors[v]);
                         }

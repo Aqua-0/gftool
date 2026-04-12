@@ -99,11 +99,6 @@ namespace TrinityModelViewer
                     });
                 }
 
-                foreach (var v4 in mat.Float4LightParameters ?? Array.Empty<TrmtrFileFloat4Parameter>())
-                {
-                    AddVec4(outItem.Vec4, v4);
-                }
-
                 foreach (var v4 in mat.Float4Parameters ?? Array.Empty<TrmtrFileFloat4Parameter>())
                 {
                     AddVec4(outItem.Vec4, v4);

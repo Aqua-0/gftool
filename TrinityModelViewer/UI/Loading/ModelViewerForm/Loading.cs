@@ -66,6 +66,9 @@ namespace TrinityModelViewer
         private async void renderCtrl_RendererReady(object? sender, EventArgs e)
         {
             ApplyRenderSettings();
+            // Trinity assets and scenes can be authored at large world scales; keep far plane generous to
+            // avoid clipping when viewing large environments.
+            renderCtrl.renderer.SetCameraClipPlanes(0.1f, 10_000.0f);
             WarmupShaders();
             StartFlatSharpWarmup();
             if (startupFiles.Length > 0 && flatSharpWarmupTask != null)
@@ -324,6 +327,10 @@ namespace TrinityModelViewer
         {
             switch (e.KeyCode)
             {
+                case Keys.Home:
+                    ResetCameraToOrigin();
+                    e.Handled = true;
+                    break;
                 case Keys.W: KeyboardControls.Forward = true; break;
                 case Keys.A: KeyboardControls.Left = true; break;
                 case Keys.S: KeyboardControls.Backward = true; break;
@@ -344,6 +351,25 @@ namespace TrinityModelViewer
                 case Keys.Q: KeyboardControls.Up = false; break;
                 case Keys.E: KeyboardControls.Down = false; break;
             }
+        }
+
+        private void ResetCameraToOrigin()
+        {
+            KeyboardControls.Forward = false;
+            KeyboardControls.Left = false;
+            KeyboardControls.Backward = false;
+            KeyboardControls.Right = false;
+            KeyboardControls.Up = false;
+            KeyboardControls.Down = false;
+
+            if (renderCtrl?.renderer == null)
+            {
+                return;
+            }
+
+            renderCtrl.renderer.FocusCamera(Vector3.Zero, 5.0f);
+            renderCtrl.renderer.SetCameraClipPlanes(0.1f, 10_000.0f);
+            renderCtrl.Invalidate();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)

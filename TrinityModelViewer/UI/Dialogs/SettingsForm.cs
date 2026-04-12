@@ -4,23 +4,26 @@ using System.Windows.Forms;
 
 namespace TrinityModelViewer
 {
-    public class SettingsForm : Form
-    {
+	    public class SettingsForm : Form
+	    {
         private readonly CheckBox darkModeCheckBox;
         private readonly CheckBox loadLodsCheckBox;
         private readonly CheckBox autoGenerateLodsOnExportCheckBox;
         private readonly CheckBox exportModelPcBaseOnExportCheckBox;
         private readonly CheckBox debugLogsCheckBox;
         private readonly CheckBox autoLoadAnimationsCheckBox;
+        private readonly NumericUpDown autoLoadAnimationsMaxCountNumeric;
         private readonly CheckBox autoLoadFirstGfpakModelCheckBox;
         private readonly CheckBox showMultipleModelsCheckBox;
         private readonly ComboBox shaderGameComboBox;
-        private readonly CheckBox extractedFallbackCheckBox;
-        private readonly ComboBox extractedGameComboBox;
-        private readonly TextBox zaOutRootTextBox;
-        private readonly TextBox svOutRootTextBox;
-        private readonly Button okButton;
-        private readonly Button cancelButton;
+	        private readonly CheckBox extractedFallbackCheckBox;
+	        private readonly ComboBox extractedGameComboBox;
+	        private readonly TextBox zaOutRootTextBox;
+	        private readonly TextBox svOutRootTextBox;
+	        private readonly CheckBox ultimateTexCheckBox;
+	        private readonly TextBox ultimateTexPathTextBox;
+	        private readonly Button okButton;
+	        private readonly Button cancelButton;
 
         public bool DarkModeEnabled => darkModeCheckBox.Checked;
         public bool LoadAllLodsEnabled => loadLodsCheckBox.Checked;
@@ -28,35 +31,41 @@ namespace TrinityModelViewer
         public bool ExportModelPcBaseOnExportEnabled => exportModelPcBaseOnExportCheckBox.Checked;
         public bool DebugLogsEnabled => debugLogsCheckBox.Checked;
         public bool AutoLoadAnimationsEnabled => autoLoadAnimationsCheckBox.Checked;
+        public int AutoLoadAnimationsMaxCount => (int)autoLoadAnimationsMaxCountNumeric.Value;
         public bool AutoLoadFirstGfpakModelEnabled => autoLoadFirstGfpakModelCheckBox.Checked;
         public bool ShowMultipleModelsEnabled => showMultipleModelsCheckBox.Checked;
         public string ShaderGameSelection => shaderGameComboBox.SelectedItem?.ToString() ?? "Auto";
-        public bool ExtractedOutFallbackEnabled => extractedFallbackCheckBox.Checked;
-        public string ActiveExtractedGameSelection => extractedGameComboBox.SelectedItem?.ToString() ?? "ZA";
-        public string ZaExtractedOutRoot => zaOutRootTextBox.Text ?? string.Empty;
-        public string SvExtractedOutRoot => svOutRootTextBox.Text ?? string.Empty;
+	        public bool ExtractedOutFallbackEnabled => extractedFallbackCheckBox.Checked;
+	        public string ActiveExtractedGameSelection => extractedGameComboBox.SelectedItem?.ToString() ?? "ZA";
+	        public string ZaExtractedOutRoot => zaOutRootTextBox.Text ?? string.Empty;
+	        public string SvExtractedOutRoot => svOutRootTextBox.Text ?? string.Empty;
+	        public bool UseUltimateTexForBntxExportEnabled => ultimateTexCheckBox.Checked;
+	        public string UltimateTexCliPath => ultimateTexPathTextBox.Text ?? string.Empty;
 
-        public SettingsForm(
-            bool darkModeEnabled,
-            bool loadAllLodsEnabled,
-            bool autoGenerateLodsOnExportEnabled,
-            bool exportModelPcBaseOnExportEnabled,
-            bool debugLogsEnabled,
-            bool autoLoadAnimationsEnabled,
-            bool autoLoadFirstGfpakModelEnabled,
-            bool showMultipleModelsEnabled,
-            string shaderGameSelection,
-            bool extractedOutFallbackEnabled,
-            string activeExtractedGameSelection,
-            string zaExtractedOutRoot,
-            string svExtractedOutRoot)
-        {
+	        public SettingsForm(
+	            bool darkModeEnabled,
+	            bool loadAllLodsEnabled,
+	            bool autoGenerateLodsOnExportEnabled,
+	            bool exportModelPcBaseOnExportEnabled,
+	            bool debugLogsEnabled,
+	            bool autoLoadAnimationsEnabled,
+	            int autoLoadAnimationsMaxCount,
+	            bool autoLoadFirstGfpakModelEnabled,
+	            bool showMultipleModelsEnabled,
+	            string shaderGameSelection,
+	            bool extractedOutFallbackEnabled,
+	            string activeExtractedGameSelection,
+	            string zaExtractedOutRoot,
+	            string svExtractedOutRoot,
+	            bool useUltimateTexForBntxExportEnabled,
+	            string ultimateTexCliPath)
+	        {
             Text = "Settings";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(540, 468);
+	            ClientSize = new Size(540, 560);
 
             darkModeCheckBox = new CheckBox
             {
@@ -104,6 +113,22 @@ namespace TrinityModelViewer
                 Checked = autoLoadAnimationsEnabled,
                 AutoSize = true,
                 Location = new Point(16, 156)
+            };
+
+            var autoLoadAnimationsMaxLabel = new Label
+            {
+                Text = "Max:",
+                AutoSize = true,
+                Location = new Point(260, 158)
+            };
+
+            autoLoadAnimationsMaxCountNumeric = new NumericUpDown
+            {
+                Minimum = 1,
+                Maximum = 50000,
+                Value = Math.Clamp(autoLoadAnimationsMaxCount, 1, 50000),
+                Location = new Point(300, 154),
+                Size = new Size(90, 23)
             };
 
             autoLoadFirstGfpakModelCheckBox = new CheckBox
@@ -220,26 +245,68 @@ namespace TrinityModelViewer
             extractedGroup.Controls.Add(zaOutRootTextBox);
             extractedGroup.Controls.Add(zaBrowse);
             extractedGroup.Controls.Add(svLabel);
-            extractedGroup.Controls.Add(svOutRootTextBox);
-            extractedGroup.Controls.Add(svBrowse);
+	            extractedGroup.Controls.Add(svOutRootTextBox);
+	            extractedGroup.Controls.Add(svBrowse);
 
-            okButton = new Button
-            {
-                Text = "OK",
-                DialogResult = DialogResult.OK,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Location = new Point(348, 434),
-                Size = new Size(75, 26)
-            };
+	            var ultimateTexGroup = new GroupBox
+	            {
+	                Text = "ultimate_tex (Optional)",
+	                Location = new Point(16, 432),
+	                Size = new Size(508, 82)
+	            };
 
-            cancelButton = new Button
-            {
-                Text = "Cancel",
-                DialogResult = DialogResult.Cancel,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Location = new Point(429, 434),
-                Size = new Size(75, 26)
-            };
+	            ultimateTexCheckBox = new CheckBox
+	            {
+	                Text = "Use ultimate_tex_cli for BNTX export (edited textures)",
+	                Checked = useUltimateTexForBntxExportEnabled,
+	                AutoSize = true,
+	                Location = new Point(12, 22)
+	            };
+
+	            var ultimateTexPathLabel = new Label
+	            {
+	                Text = "ultimate_tex_cli.exe:",
+	                AutoSize = true,
+	                Location = new Point(12, 50)
+	            };
+
+	            ultimateTexPathTextBox = new TextBox
+	            {
+	                Location = new Point(140, 46),
+	                Size = new Size(300, 23),
+	                Text = ultimateTexCliPath ?? string.Empty
+	            };
+
+	            var ultimateTexBrowse = new Button
+	            {
+	                Text = "...",
+	                Location = new Point(446, 45),
+	                Size = new Size(44, 25)
+	            };
+	            ultimateTexBrowse.Click += (s, e) => BrowseForFile(ultimateTexPathTextBox, "ultimate_tex_cli.exe|ultimate_tex_cli.exe|Executable (*.exe)|*.exe|All files (*.*)|*.*");
+
+	            ultimateTexGroup.Controls.Add(ultimateTexCheckBox);
+	            ultimateTexGroup.Controls.Add(ultimateTexPathLabel);
+	            ultimateTexGroup.Controls.Add(ultimateTexPathTextBox);
+	            ultimateTexGroup.Controls.Add(ultimateTexBrowse);
+
+	            okButton = new Button
+	            {
+	                Text = "OK",
+	                DialogResult = DialogResult.OK,
+	                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+	                Location = new Point(348, 526),
+	                Size = new Size(75, 26)
+	            };
+
+	            cancelButton = new Button
+	            {
+	                Text = "Cancel",
+	                DialogResult = DialogResult.Cancel,
+	                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+	                Location = new Point(429, 526),
+	                Size = new Size(75, 26)
+	            };
 
             Controls.Add(darkModeCheckBox);
             Controls.Add(loadLodsCheckBox);
@@ -247,20 +314,23 @@ namespace TrinityModelViewer
             Controls.Add(exportModelPcBaseOnExportCheckBox);
             Controls.Add(debugLogsCheckBox);
             Controls.Add(autoLoadAnimationsCheckBox);
+            Controls.Add(autoLoadAnimationsMaxLabel);
+            Controls.Add(autoLoadAnimationsMaxCountNumeric);
             Controls.Add(autoLoadFirstGfpakModelCheckBox);
             Controls.Add(showMultipleModelsCheckBox);
             Controls.Add(shaderGameLabel);
-            Controls.Add(shaderGameComboBox);
-            Controls.Add(extractedGroup);
-            Controls.Add(okButton);
-            Controls.Add(cancelButton);
+	            Controls.Add(shaderGameComboBox);
+	            Controls.Add(extractedGroup);
+	            Controls.Add(ultimateTexGroup);
+	            Controls.Add(okButton);
+	            Controls.Add(cancelButton);
 
             AcceptButton = okButton;
             CancelButton = cancelButton;
         }
 
-        private void BrowseForFolder(TextBox target)
-        {
+	        private void BrowseForFolder(TextBox target)
+	        {
             using var fbd = new FolderBrowserDialog();
             fbd.Description = "Select the extracted game 'out' directory";
             if (!string.IsNullOrWhiteSpace(target.Text) && System.IO.Directory.Exists(target.Text))
@@ -268,10 +338,25 @@ namespace TrinityModelViewer
                 fbd.SelectedPath = target.Text;
             }
 
-            if (fbd.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
-            {
-                target.Text = fbd.SelectedPath;
-            }
-        }
-    }
+	            if (fbd.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
+	            {
+	                target.Text = fbd.SelectedPath;
+	            }
+	        }
+
+		        private void BrowseForFile(TextBox target, string filter)
+		        {
+	            using var ofd = new OpenFileDialog();
+	            ofd.Filter = filter;
+	            if (!string.IsNullOrWhiteSpace(target.Text) && System.IO.File.Exists(target.Text))
+	            {
+	                ofd.FileName = target.Text;
+	            }
+
+	            if (ofd.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(ofd.FileName))
+	            {
+	                target.Text = ofd.FileName;
+	            }
+	        }
+	    }
 }

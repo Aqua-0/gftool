@@ -13,7 +13,7 @@ namespace GFTool.Renderer
     {
         public async Task<Model> AddSceneModelAsync(string file, bool loadAllLods = false, CancellationToken token = default, IProgress<float>? progress = null)
         {
-            return await AddSceneModelAsync(new DiskAssetProvider(), file, loadAllLods, token, progress);
+            return await AddSceneModelAsync(new InMemoryOverrideAssetProvider(new DiskAssetProvider()), file, loadAllLods, token, progress);
         }
 
         public async Task<Model> AddSceneModelAsync(IAssetProvider assetProvider, string file, bool loadAllLods = false, CancellationToken token = default, IProgress<float>? progress = null)

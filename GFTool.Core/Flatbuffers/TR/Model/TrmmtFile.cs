@@ -2,7 +2,7 @@ using FlatSharp.Attributes;
 
 namespace Trinity.Core.Flatbuffers.TR.Model
 {
-    // PokeDocs-based TRMMT schema (Titan/Ikkaku).
+    // TRMMT schema used by SV/ZA.
     // This file models the on-disk TRMMT structure used to map to variant material files (e.g. normal/rare).
 
     [FlatBufferTable]

@@ -44,14 +44,6 @@ namespace TrinityModelViewer.Export
             var gltf = new GltfRoot();
             gltf.Asset = new GltfAsset { Version = "2.0", Generator = "TrinityModelViewer" };
 
-            gltf.Samplers.Add(new GltfSampler
-            {
-                MagFilter = 9729,
-                MinFilter = 9729,
-                WrapS = 33071,
-                WrapT = 33071
-            });
-
             int sceneIndex = 0;
             gltf.Scene = sceneIndex;
             var scene = new GltfScene();
@@ -95,7 +87,7 @@ namespace TrinityModelViewer.Export
                     submeshes.FirstOrDefault(s => !anyTangents || s.HasTangents) ??
                     submeshes[0];
 
-                int meshIndex = AddMeshShape(gltf, buffer, canonical, submeshes, shapeIndex, gltfMaterialIndex, materialByName, texCache, texDir);
+                int meshIndex = AddMeshShape(gltf, buffer, model, canonical, submeshes, shapeIndex, gltfMaterialIndex, materialByName, texCache, texDir);
 
                 var node = new GltfNode { Name = shapeGroup.Key, Mesh = meshIndex };
                 if (skinIndex.HasValue && anySkinning)

@@ -4,23 +4,32 @@ using System.Windows.Forms;
 
 namespace TrinityModelViewer
 {
-    internal sealed class FlatbufferJsonEditorForm : Form
-    {
-        private readonly TextBox textBox;
-        private readonly Panel findPanel;
-        private readonly TextBox findTextBox;
-        private int lastFindIndex;
+	    internal sealed class FlatbufferJsonEditorForm : Form
+	    {
+	        private readonly TextBox textBox;
+	        private readonly Panel findPanel;
+	        private readonly TextBox findTextBox;
+	        private int lastFindIndex;
+	        private readonly Func<string, bool, string>? formatJson;
 
-        public event EventHandler<string>? ApplyRequested;
-        public event EventHandler<string>? ExportRequested;
-        public event EventHandler<string>? ExportReserializeRequested;
+	        public event EventHandler<string>? ApplyRequested;
+	        public event EventHandler<string>? ExportRequested;
+	        public event EventHandler<string>? ExportReserializeRequested;
 
-        public FlatbufferJsonEditorForm(string title, string path, string json, bool allowApply = true, bool allowExport = true)
-        {
-            Text = string.IsNullOrWhiteSpace(title) ? "Json Editor" : title;
-            StartPosition = FormStartPosition.CenterParent;
-            Width = 980;
-            Height = 760;
+	        public FlatbufferJsonEditorForm(
+	            string title,
+	            string path,
+	            string json,
+	            bool allowApply = true,
+	            bool allowExport = true,
+	            bool showPrettyToggle = false,
+	            Func<string, bool, string>? formatJson = null)
+	        {
+	            this.formatJson = formatJson;
+	            Text = string.IsNullOrWhiteSpace(title) ? "Json Editor" : title;
+	            StartPosition = FormStartPosition.CenterParent;
+	            Width = 980;
+	            Height = 760;
 
             var header = new Label
             {
@@ -110,27 +119,58 @@ namespace TrinityModelViewer
             findPanel.Controls.Add(findNextButton);
             findPanel.Controls.Add(findCloseButton);
 
-            var buttonPanel = new Panel { Dock = DockStyle.Bottom, Height = 34 };
+	            var buttonPanel = new Panel { Dock = DockStyle.Bottom, Height = 34 };
 
-            var applyButton = new Button { Text = "Apply", Dock = DockStyle.Left, Width = 90 };
-            applyButton.Click += (s, e) => ApplyRequested?.Invoke(this, textBox.Text);
-            applyButton.Enabled = allowApply;
+	            var applyButton = new Button { Text = "Apply", Dock = DockStyle.Left, Width = 90 };
+	            applyButton.Click += (s, e) => ApplyRequested?.Invoke(this, textBox.Text);
+	            applyButton.Enabled = allowApply;
 
-            var exportButton = new Button { Text = "Export...", Dock = DockStyle.Left, Width = 90 };
-            exportButton.Click += (s, e) => ExportRequested?.Invoke(this, textBox.Text);
-            exportButton.Enabled = allowExport;
+	            var exportButton = new Button { Text = "Export...", Dock = DockStyle.Left, Width = 90 };
+	            exportButton.Click += (s, e) => ExportRequested?.Invoke(this, textBox.Text);
+	            exportButton.Enabled = allowExport;
 
-            var exportReserializeButton = new Button { Text = "Reserialize...", Dock = DockStyle.Left, Width = 110 };
-            exportReserializeButton.Click += (s, e) => ExportReserializeRequested?.Invoke(this, textBox.Text);
-            exportReserializeButton.Enabled = allowExport;
+	            var exportReserializeButton = new Button { Text = "Reserialize...", Dock = DockStyle.Left, Width = 110 };
+	            exportReserializeButton.Click += (s, e) => ExportReserializeRequested?.Invoke(this, textBox.Text);
+	            exportReserializeButton.Enabled = allowExport;
 
-            var closeButton = new Button { Text = "Close", Dock = DockStyle.Right, Width = 90 };
-            closeButton.Click += (s, e) => Close();
+	            CheckBox? prettyToggle = null;
+	            if (showPrettyToggle)
+	            {
+	                prettyToggle = new CheckBox
+	                {
+	                    Text = "Pretty samplers",
+	                    Dock = DockStyle.Left,
+	                    Width = 140
+	                };
+	                prettyToggle.CheckedChanged += (s, e) =>
+	                {
+	                    if (this.formatJson == null)
+	                    {
+	                        return;
+	                    }
 
-            buttonPanel.Controls.Add(applyButton);
-            buttonPanel.Controls.Add(exportButton);
-            buttonPanel.Controls.Add(exportReserializeButton);
-            buttonPanel.Controls.Add(closeButton);
+	                    try
+	                    {
+	                        textBox.Text = this.formatJson(textBox.Text ?? string.Empty, prettyToggle.Checked);
+	                    }
+	                    catch (Exception ex)
+	                    {
+	                        MessageBox.Show(this, $"Reformat failed:\n{ex.Message}", "Json Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+	                    }
+	                };
+	            }
+
+	            var closeButton = new Button { Text = "Close", Dock = DockStyle.Right, Width = 90 };
+	            closeButton.Click += (s, e) => Close();
+
+	            buttonPanel.Controls.Add(applyButton);
+	            buttonPanel.Controls.Add(exportButton);
+	            buttonPanel.Controls.Add(exportReserializeButton);
+	            if (prettyToggle != null)
+	            {
+	                buttonPanel.Controls.Add(prettyToggle);
+	            }
+	            buttonPanel.Controls.Add(closeButton);
 
             Controls.Add(textBox);
             Controls.Add(findPanel);

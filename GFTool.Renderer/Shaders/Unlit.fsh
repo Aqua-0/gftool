@@ -8,6 +8,8 @@ uniform sampler2D AOMap;
 uniform sampler2D SSSMaskMap;
 
 uniform vec4 UVScaleOffset;
+uniform vec4 ScrollUVSpeed;
+uniform vec4 time_params;
 uniform vec4 BaseColor;
 uniform vec4 BaseColorLayer1;
 uniform vec4 BaseColorLayer2;
@@ -50,6 +52,7 @@ void main()
 {
     vec2 uv = vec2(TexCoord.x, 1.0 - TexCoord.y);
     uv = uv * UVScaleOffset.xy + UVScaleOffset.zw;
+    uv += ScrollUVSpeed.xy * time_params.x;
 
     bool useLayerMask = EnableLayerMaskMap && (NumMaterialLayer > 0);
     vec4 layerMask = vec4(0.0);

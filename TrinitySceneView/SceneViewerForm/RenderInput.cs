@@ -16,11 +16,48 @@ namespace TrinitySceneView
 {
     public partial class SceneViewerForm : Form
     {
+        private System.Windows.Forms.Timer? cameraStatusTimer;
+        private Label? cameraStatusLbl;
+
         //Update camera position info
         private void glCtxt_Paint(object sender, PaintEventArgs e)
         {
+            if (isSceneLoading)
+            {
+                return;
+            }
+
+            UpdateCameraStatusLabel();
+        }
+
+        private void UpdateCameraStatusLabel()
+        {
+            if (renderCtrl?.renderer == null)
+            {
+                return;
+            }
+
+            if (cameraStatusLbl == null)
+            {
+                return;
+            }
+
             var cam = renderCtrl.renderer.GetCameraTransform();
-            statusLbl.Text = string.Format("Camera: Pos={0}, [Quat={1} Euler={2}]", cam.Position.ToString(), cam.Rotation.ToString(), cam.Rotation.ToEulerAngles().ToString());
+            var euler = cam.Rotation.ToEulerAngles();
+
+            string mode = eventUseCameraCheckBox?.Checked == true ? "EventCam" : "FreeCam";
+            string rot = (config.RotateModels180X ? "RotX" : config.RotateModels180Y ? "RotY" : "RotNone");
+            string map = $"MapA={(config.ApplySceneRotationToActors ? "On" : "Off")} MapC={(config.ApplySceneRotationToEventCamera ? "On" : "Off")}";
+
+            var text = $"Camera({mode},{rot},{map}) Pos={cam.Position} Euler={euler}";
+
+            // When using event cam, show the raw script camera too so coords can be compared.
+            if (eventShowCameraCheckBox?.Checked == true || eventUseCameraCheckBox?.Checked == true)
+            {
+                text += $" | EventRaw Pos={eventCameraPos} Rot={eventCameraRotDeg} Fov={eventCameraFovDeg:0.##}";
+            }
+
+            cameraStatusLbl.Text = text;
         }
 
         private void toolstripGBuf_Clicked(object sender, EventArgs e)
@@ -54,6 +91,10 @@ namespace TrinitySceneView
         {
             switch (e.KeyCode)
             {
+                case Keys.Home:
+                    ResetCameraToOrigin();
+                    e.Handled = true;
+                    break;
                 case Keys.W: KeyboardControls.Forward = true; break;
                 case Keys.A: KeyboardControls.Left = true; break;
                 case Keys.S: KeyboardControls.Backward = true; break;
@@ -88,11 +129,52 @@ namespace TrinitySceneView
             messageListView.SmallImageList = messageIcons;
             messageListView.FullRowSelect = true;
             messageListView.AutoResizeColumn(0, ColumnHeaderAutoResizeStyle.HeaderSize);
+
+            if (cameraStatusLbl == null)
+            {
+                cameraStatusLbl = new Label
+                {
+                    Dock = DockStyle.Top,
+                    Height = 14,
+                    Text = "Camera: (loading...)"
+                };
+                bottomPanel.Controls.Add(cameraStatusLbl);
+                bottomPanel.Controls.SetChildIndex(cameraStatusLbl, 0);
+            }
+
+            if (cameraStatusTimer == null)
+            {
+                cameraStatusTimer = new System.Windows.Forms.Timer { Interval = 100, Enabled = true };
+                cameraStatusTimer.Tick += (_, _) =>
+                {
+                    try
+                    {
+                        UpdateCameraStatusLabel();
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                };
+            }
         }
 
         //Message handler
         private void messageHandler_Callback(object? sender, GFTool.Renderer.Core.Message e)
         {
+            if (IsHandleCreated && InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke((Action)(() => messageHandler_Callback(sender, e)));
+                }
+                catch
+                {
+                    // Ignore shutdown races / handle disposal.
+                }
+                return;
+            }
+
             var item = new ListViewItem();
             item.Name = e.GetHashCode().ToString();
             item.Text = e.Content;
@@ -109,6 +191,25 @@ namespace TrinitySceneView
                 messageListView.Items.Add(item);
                 messageListView.EnsureVisible(messageListView.Items.Count - 1);
             }
+        }
+
+        private void ResetCameraToOrigin()
+        {
+            KeyboardControls.Forward = false;
+            KeyboardControls.Left = false;
+            KeyboardControls.Backward = false;
+            KeyboardControls.Right = false;
+            KeyboardControls.Up = false;
+            KeyboardControls.Down = false;
+
+            if (renderCtrl?.renderer == null)
+            {
+                return;
+            }
+
+            renderCtrl.renderer.FocusCamera(Vector3.Zero, 5.0f);
+            renderCtrl.renderer.SetCameraClipPlanes(0.1f, 10_000.0f);
+            renderCtrl.Invalidate();
         }
     }
 }

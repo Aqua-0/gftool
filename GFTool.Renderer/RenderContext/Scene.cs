@@ -33,7 +33,7 @@ namespace GFTool.Renderer
         {
             //TODO: Probably figure out how we're adding shit to child nodes (assuming necessary at this level)
 
-            var mdl = new Model(file, loadAllLods);
+            var mdl = new Model(new InMemoryOverrideAssetProvider(new DiskAssetProvider()), file, loadAllLods);
             SceneGraph.Instance.GetRoot().AddChild(mdl);
 
             return mdl;
@@ -56,7 +56,11 @@ namespace GFTool.Renderer
         public void ClearScene()
         {
             var root = SceneGraph.Instance.GetRoot();
-            root.children.RemoveAll(child => child is Model);
+            foreach (var overlay in root.children.OfType<HeightFieldMesh>().ToList())
+            {
+                try { overlay.Dispose(); } catch { }
+            }
+            root.children.RemoveAll(child => child is Model || child is HeightFieldMesh);
         }
 
     }

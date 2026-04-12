@@ -17,6 +17,11 @@ uniform bool EnableSkinning;
 uniform bool SwapBlendOrder;
 uniform mat4 Bones[192];
 uniform int BoneCount;
+uniform bool EnableDisplacementMap;
+uniform sampler2D DisplacementMap;
+uniform float DisplacementHeight;
+uniform vec4 UVScaleOffset3;
+uniform int UVIndexLayer3;
 
 out vec3 FragPos;
 out vec3 Normal;
@@ -25,6 +30,17 @@ out vec4 Color;
 out vec3 Tangent;
 out vec3 Bitangent;
 out vec3 Binormal;
+
+vec2 TransformUv(vec2 uv, vec4 scaleOffset)
+{
+    vec2 stuv = scaleOffset.xy * (uv - scaleOffset.zw);
+    return vec2(stuv.x, 1.0 - stuv.y);
+}
+
+vec2 SelectUv(vec2 uv0, vec2 uv1, int index)
+{
+    return (index == 0) ? uv0 : uv1;
+}
 
 void main()
 {
@@ -58,6 +74,17 @@ void main()
         localBinormal = normalize(skinMat3 * aBinormal);
     }
 
+    UV01 = vec4(aTexCoord, aTexCoord2);
+    Color = aColor;
+
+    if (EnableDisplacementMap)
+    {
+        vec2 dispUv = TransformUv(SelectUv(UV01.xy, UV01.zw, UVIndexLayer3), UVScaleOffset3);
+        float phase = textureLod(DisplacementMap, dispUv, 0.0).r;
+        float disp = sin(phase) * (aColor.r * DisplacementHeight);
+        localPos.xyz += disp * localNormal;
+    }
+
     FragPos = vec3(model * localPos);
 
     mat3 normalMatrix = transpose(inverse(mat3(model)));
@@ -67,9 +94,6 @@ void main()
     Tangent = tangent;
     Bitangent = normalize(cross(Normal, tangent) * handedness);
     Binormal = normalize(normalMatrix * localBinormal);
-
-    UV01 = vec4(aTexCoord, aTexCoord2);
-    Color = aColor;
 
     gl_Position = projection * view * vec4(FragPos, 1.0);
 }

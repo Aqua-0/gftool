@@ -19,6 +19,20 @@ namespace GFTool.Renderer
 {
     public partial class RenderContext : IDisposable
     {
+        public void SetCameraFovDegrees(float fovDegrees)
+        {
+            camera.SetFovDegrees(fovDegrees);
+        }
+
+        public void SetCameraPoseFromEulerDegrees(Vector3 position, Vector3 eulerDegrees, float? fovDegrees = null)
+        {
+            camera.SetPoseFromEulerDegrees(position, eulerDegrees);
+            if (fovDegrees.HasValue)
+            {
+                camera.SetFovDegrees(fovDegrees.Value);
+            }
+        }
+
         public void UpdateMovementControls(float deltaSeconds)
         {
             if (!AllowUserInput) return;

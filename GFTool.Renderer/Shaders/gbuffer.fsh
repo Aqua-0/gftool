@@ -14,6 +14,8 @@ uniform sampler2D specularTexture;
 uniform sampler2D aoTexture;
 uniform sampler2D ssaoTexture;
 uniform sampler2D depthTexture;
+uniform sampler2D shadowFactorTexture;
+uniform samplerCube EnvCubemap;
 
 uniform vec3 LightDirection;
 uniform vec3 LightColor;
@@ -25,6 +27,8 @@ uniform mat4 InvProjection;
 
 uniform float CameraNear;
 uniform float CameraFar;
+uniform float EnvMaxLod;
+uniform float EnvIntensity;
 
 uniform bool useAlbedo;
 uniform bool useNormal;
@@ -34,6 +38,8 @@ uniform bool useSSAO;
 uniform bool useToon;
 uniform bool useLegacy;
 uniform bool useDepth;
+uniform bool useEmission;
+uniform bool useShadows;
 
 vec3 GammaEncode(vec3 linearColor)
 {
@@ -86,6 +92,16 @@ float G_Smith(float k, float NdotV, float NdotL)
 vec3 F_Schlick(vec3 F0, float VdotH)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
+}
+
+vec3 EnvBRDFApprox(vec3 F0, float roughness, float NdotV)
+{
+    vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
+    return F0 * ab.x + ab.y;
 }
 
 void main()
@@ -239,6 +255,8 @@ void main()
                 return;
             }
 
+            float shadow = useShadows ? texture(shadowFactorTexture, inTexCoord).r : 1.0;
+
             vec3 worldPos = ReconstructWorldPos(inTexCoord, depth);
             vec3 viewDir = normalize(CameraPos - worldPos);
             vec3 lightDir = normalize(-LightDirection);
@@ -264,11 +282,20 @@ void main()
             vec3 specularBRDF = (D * G) * F / max(4.0 * NdotV * NdotL, 0.0001);
 
             vec3 diffuse = baseColor * (1.0 - metallic);
-            vec3 lit = AmbientColor + LightColor * wrappedNdotL;
+            vec3 lit = AmbientColor + LightColor * (wrappedNdotL * shadow);
             vec3 diffuseLit = diffuse * lit;
-            vec3 specularLit = specularBRDF * LightColor * NdotL;
+            vec3 specularLit = specularBRDF * LightColor * (NdotL * shadow);
 
-            linear = (diffuseLit + specularLit) * aoSoft * ssaoSoft + emission;
+            float envI = max(EnvIntensity, 0.0);
+            vec3 R = reflect(-viewDir, normal);
+            float envLod = clamp(a, 0.0, 1.0) * max(EnvMaxLod, 0.0);
+            vec3 envSpec = textureLod(EnvCubemap, R, envLod).rgb;
+            vec3 envDiff = textureLod(EnvCubemap, normal, max(EnvMaxLod, 0.0)).rgb;
+            vec3 envSpecTerm = envSpec * EnvBRDFApprox(F0, a, NdotV);
+            vec3 envDiffTerm = envDiff * diffuse;
+
+            vec3 ibl = (envDiffTerm + envSpecTerm) * envI;
+            linear = (diffuseLit + specularLit + ibl) * aoSoft * ssaoSoft + emission;
         }
 
         outColor = GammaEncode(linear);
@@ -334,6 +361,11 @@ void main()
         if (useAO)
         {
             outColor = vec3(ao);
+            return;
+        }
+        if (useEmission)
+        {
+            outColor = GammaEncode(emission);
             return;
         }
 

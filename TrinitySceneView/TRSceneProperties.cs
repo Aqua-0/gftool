@@ -1,5 +1,6 @@
 using GFTool.Core.Flatbuffers.TR.Scene.Components;
 using System;
+using System.Linq;
 using System.Text;
 
 namespace TrinitySceneView
@@ -22,22 +23,25 @@ namespace TrinitySceneView
             StringBuilder sb = new StringBuilder();
 
             var data = (trinity_SceneObject)objData;
-            sb.AppendLine("Name: " + data.Name);
-            if (data.AttachJointName != string.Empty)
+            sb.AppendLine("Name: " + (data.Name ?? string.Empty));
+            if (!string.IsNullOrEmpty(data.AttachJointName))
                 sb.AppendLine("Attach joint name: " + data.AttachJointName);
-            sb.AppendLine(string.Format("Tags: ({0})", data.TagList.Length));
 
-            foreach (var tag in data.TagList)
+            var tags = data.TagList ?? Array.Empty<string>();
+            sb.AppendLine(string.Format("Tags: ({0})", tags.Length));
+
+            foreach (var tag in tags)
             {
                 sb.AppendLine(string.Format("  {0}" + Environment.NewLine, tag == string.Empty ? "(Blank)" : tag));
             }
 
-            if (data.Layers.Length > 0)
+            var layers = data.Layers ?? Array.Empty<ObjectLayer>();
+            if (layers.Length > 0)
             {
-                sb.AppendLine(string.Format("Layers: ({0})", data.Layers.Length));
-                foreach (var layer in data.Layers)
+                sb.AppendLine(string.Format("Layers: ({0})", layers.Length));
+                foreach (var layer in layers)
                 {
-                    sb.AppendLine(string.Format("  {0}" + Environment.NewLine, layer.Name));
+                    sb.AppendLine(string.Format("  {0}" + Environment.NewLine, layer?.Name ?? string.Empty));
                 }
             }
 
@@ -128,6 +132,73 @@ namespace TrinitySceneView
             return sb.ToString();
         }
 
+        private static string PlacementRegistry(object objData)
+        {
+            var sb = new StringBuilder();
+            var data = (trinity_PlacementRegistry)objData;
+
+            sb.AppendLine("Type: trinity_PlacementRegistry");
+            if (data.Entry.Discriminator == 0)
+            {
+                sb.AppendLine("Item: (null)");
+                return sb.ToString();
+            }
+
+            sb.AppendLine("EntryDiscriminator: " + data.Entry.Discriminator);
+            data.Entry.Switch(
+                defaultCase: () => sb.AppendLine("Entry: (unhandled)"),
+                case1: (PlacementObjectArray ol) =>
+                {
+                    sb.AppendLine("EntryType: PlacementObjectArray");
+                    sb.AppendLine("Objects: " + (ol.Table?.Count ?? 0));
+                    if (ol.Table != null)
+                    {
+                        foreach (var o in ol.Table.Take(10))
+                        {
+                            sb.AppendLine($"  Name={o?.Name} Type={o?.Type} File={o?.File}");
+                        }
+                    }
+                },
+                case2: (PlacementObjectTemplateArray tl) =>
+                {
+                    sb.AppendLine("EntryType: PlacementObjectTemplateArray");
+                    sb.AppendLine("ObjectTemplates: " + (tl.Table?.Count ?? 0));
+                    if (tl.Table != null)
+                    {
+                        foreach (var t in tl.Table.Take(10))
+                        {
+                            sb.AppendLine($"  Name={t?.Name} Path={t?.Path}");
+                        }
+                    }
+                },
+                case3: (PlacementPositionArray pl) =>
+                {
+                    sb.AppendLine("EntryType: PlacementPositionArray");
+                    sb.AppendLine("Positions: " + (pl.Table?.Count ?? 0));
+                    if (pl.Table != null)
+                    {
+                        foreach (var p in pl.Table.Take(10))
+                        {
+                            sb.AppendLine($"  Name={p?.Name} pos=({p?.Position?.X},{p?.Position?.Y},{p?.Position?.Z}) rot=({p?.Rotation?.X},{p?.Rotation?.Y},{p?.Rotation?.Z})");
+                        }
+                    }
+                },
+                case4: (PlacementSpawnerArray sl) =>
+                {
+                    sb.AppendLine("EntryType: PlacementSpawnerArray");
+                    sb.AppendLine("Spawners: " + (sl.Table?.Count ?? 0));
+                    if (sl.Table != null)
+                    {
+                        foreach (var s in sl.Table.Take(10))
+                        {
+                            sb.AppendLine($"  Name={s?.Name} Scene={s?.Scene} args={s?.Arguments?.Count ?? 0}");
+                        }
+                    }
+                });
+
+            return sb.ToString();
+        }
+
         public static string GetProperties(string sceneComponent, object objData)
         {
             string ret = string.Empty;
@@ -141,6 +212,7 @@ namespace TrinitySceneView
                 case "pe_TextComponent": ret = TextComponent(objData); break;
                 case "pe_InputEventTriggerComponent": ret = InputEventTriggerComponent(objData); break;
                 case "trinity_PropertySheet": ret = PropertySheet(objData); break;
+                case "trinity_PlacementRegistry": ret = PlacementRegistry(objData); break;
 
             }
 

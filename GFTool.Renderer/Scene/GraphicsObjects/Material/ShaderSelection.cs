@@ -37,6 +37,17 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
             }
 
+            if (RenderOptions.TransparentPass &&
+                isTransparent &&
+                string.Equals(shaderKey, "SSS", StringComparison.OrdinalIgnoreCase))
+            {
+                var forwardShader = ShaderPool.Instance.GetShader("SSSForward");
+                if (forwardShader != null)
+                {
+                    return forwardShader;
+                }
+            }
+
             if (RenderOptions.LegacyMode)
             {
                 shader ??= ShaderPool.Instance.GetShader(shaderKey);

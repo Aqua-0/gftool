@@ -27,6 +27,8 @@ namespace TrinityModelViewer
         public bool ShowSkeleton { get; set; } = false;
         public bool UseRareTrmtrMaterials { get; set; } = false;
         public bool UseBackupIkCharacterShader { get; set; } = false;
+        public bool EnableTeraEffect { get; set; } = false;
+        public int TeraTypeIndex { get; set; } = 0;
         public bool EnablePerfHud { get; set; } = false;
         public bool EnablePerfSpikeLog { get; set; } = false;
         public bool EnableVsync { get; set; } = false;
@@ -36,6 +38,7 @@ namespace TrinityModelViewer
         public bool DebugLogs { get; set; } = false;
         public int ShaderDebugMode { get; set; } = 0;
         public bool AutoLoadAnimations { get; set; } = false;
+        public int AutoLoadAnimationsMaxCount { get; set; } = 500;
         public bool AutoLoadFirstGfpakModel { get; set; } = true;
         public bool UseTrsklInverseBind { get; set; } = true;
         public bool AutoMapBlendIndices { get; set; } = true;
@@ -49,6 +52,10 @@ namespace TrinityModelViewer
         public string ActiveExtractedGame { get; set; } = "ZA";
         public string ZaExtractedOutRoot { get; set; } = string.Empty;
         public string SvExtractedOutRoot { get; set; } = string.Empty;
+
+        // Optional external tool for encoding edited textures back to BNTX.
+        public bool UseUltimateTexForBntxExport { get; set; } = false;
+        public string UltimateTexCliPath { get; set; } = string.Empty;
 
         public string LastModelPath { get; set; } = string.Empty;
         public string LastExportTrinityDirectory { get; set; } = string.Empty;

@@ -40,6 +40,7 @@ namespace TrinityModelViewer.Export
             [JsonPropertyName("children")] public List<int>? Children { get; set; }
             [JsonPropertyName("mesh")] public int? Mesh { get; set; }
             [JsonPropertyName("skin")] public int? Skin { get; set; }
+            [JsonPropertyName("matrix")] public float[]? Matrix { get; set; }
             [JsonPropertyName("translation")] public float[]? Translation { get; set; }
             [JsonPropertyName("rotation")] public float[]? Rotation { get; set; }
             [JsonPropertyName("scale")] public float[]? Scale { get; set; }
@@ -49,6 +50,8 @@ namespace TrinityModelViewer.Export
         {
             [JsonPropertyName("name")] public string? Name { get; set; }
             [JsonPropertyName("primitives")] public List<GltfPrimitive> Primitives { get; set; } = new List<GltfPrimitive>();
+            [JsonPropertyName("weights")] public float[]? Weights { get; set; }
+            [JsonPropertyName("extras")] public Dictionary<string, object>? Extras { get; set; }
         }
 
         private sealed class GltfPrimitive
@@ -57,6 +60,7 @@ namespace TrinityModelViewer.Export
             [JsonPropertyName("indices")] public int? Indices { get; set; }
             [JsonPropertyName("material")] public int? Material { get; set; }
             [JsonPropertyName("mode")] public int Mode { get; set; } = 4; // TRIANGLES
+            [JsonPropertyName("targets")] public List<Dictionary<string, int>>? Targets { get; set; }
             [JsonPropertyName("extras")] public Dictionary<string, object>? Extras { get; set; }
         }
 

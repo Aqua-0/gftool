@@ -32,6 +32,7 @@ namespace GFTool.Renderer
         private int ssaoTexture;
         private int ssaoBlurTexture;
         private bool ssaoAvailable;
+        private EnvironmentMap? environmentMap;
         private Animation? activeAnimation;
         private Animation? activeAnimationFallback;
         private double animationTimeSeconds;

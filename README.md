@@ -1,6 +1,12 @@
 # GFTool Monorepo
 Tools and libraries for working with gflib games
 
+## Onboarding
+
+- `docs/ONBOARDING.md`
+- `docs/SHADER_ITERATION_PLAYBOOK.md`
+- `docs/PERF_HUD_AND_SPIKE_LOGGER.md`
+
 ## Tools
 
 ### Trinity Mod Loader
@@ -23,3 +29,9 @@ The canonical repository for GFTool.Core which provies serializers for Trinity f
 
 ## Feature Suggestions
 Please discuss feature suggestions on the [pokemodding discord.](http://discord.gg/A99eGRF) Our aim is to make a stable and user friendly tool, so please understand if your dream feature isn't developed immediately.
+
+## AI Notice
+AI was used in the making of this fork, this will explain some weird functions or comments.
+
+## Special Thanks 
+Switch toolbox for bfres decoding

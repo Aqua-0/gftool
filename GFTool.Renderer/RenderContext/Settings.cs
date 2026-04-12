@@ -75,15 +75,29 @@ namespace GFTool.Renderer
             //Create GBuffer
             gbuffer = new GBuffer(width, height);
             CreateSsaoTargets(width, height);
+            CreateShadowTargets(width, height);
 
             GL.Viewport(0, 0, width, height);
             camera?.Resize(width, height);
+            RenderOptions.RenderTargetWidth = Math.Max(1, width);
+            RenderOptions.RenderTargetHeight = Math.Max(1, height);
+
+            if (environmentMap == null)
+            {
+                environmentMap = new EnvironmentMap(128);
+                RenderOptions.EnvCubemapTextureId = environmentMap.CubemapTextureId;
+                RenderOptions.EnvMaxLod = environmentMap.MaxLod;
+            }
         }
 
         public void Dispose()
         {
             gbuffer.Dispose();
             DeleteSsaoTargets();
+            DeleteShadowTargets();
+            environmentMap?.Dispose();
+            environmentMap = null;
+            RenderOptions.EnvCubemapTextureId = 0;
         }
 
     }

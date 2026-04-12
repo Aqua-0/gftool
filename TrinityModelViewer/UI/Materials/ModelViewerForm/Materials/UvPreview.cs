@@ -14,6 +14,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Trinity.Core.Flatbuffers.TR.Model;
 
 namespace TrinityModelViewer
 {
@@ -29,10 +30,34 @@ namespace TrinityModelViewer
             RequestMaterialPreviewUpdate();
         }
 
-        private void materialUvWrapModeCombo_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            RequestMaterialPreviewUpdate();
-        }
+	        private void materialUvWrapModeCombo_SelectedIndexChanged(object? sender, EventArgs e)
+	        {
+	            if (currentMaterial != null)
+	            {
+	                var selected = materialUvWrapModeCombo.SelectedIndex;
+	                // 0 = Auto (Sampler), 1 = Repeat, 2 = MirroredRepeat, 3 = Clamp.
+	                if (selected >= 1 && selected <= 3)
+	                {
+	                    var tex = GetSelectedTexture();
+	                    if (tex != null)
+	                    {
+	                        UVWrapMode mode = selected switch
+	                        {
+	                            1 => UVWrapMode.WRAP,
+	                            2 => UVWrapMode.MIRROR,
+	                            _ => UVWrapMode.CLAMP
+	                        };
+
+	                        if (currentMaterial.TrySetSamplerWrap(tex.Slot, mode, mode))
+	                        {
+	                            // Rebuild material grids so the texture list reflects updated wrap modes.
+	                            PopulateMaterialDetails(currentMaterial);
+	                        }
+	                    }
+	                }
+	            }
+	            RequestMaterialPreviewUpdate();
+	        }
 
         private Texture? GetSelectedTexture()
         {
@@ -140,6 +165,7 @@ namespace TrinityModelViewer
                         if (sourceBitmap != null)
                         {
                             SetTexturePreview(sourceBitmap, ownsImage: false);
+                            UpdateTextureInfoLabel(texture, sourceBitmap);
 
                             if (channel != TexturePreviewChannel.Rgba)
                             {
@@ -149,6 +175,7 @@ namespace TrinityModelViewer
                         else
                         {
                             SetTexturePreview(null, ownsImage: true);
+                            UpdateTextureInfoLabel(texture, null);
                         }
 
                         if (uvBitmap != null)

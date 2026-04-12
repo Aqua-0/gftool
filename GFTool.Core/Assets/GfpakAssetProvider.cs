@@ -24,6 +24,7 @@ namespace Trinity.Core.Assets
         private readonly object cacheLock = new object();
 
         public string DisplayName => Path.GetFileName(containerPath);
+        public string ContainerPath => containerPath;
 
         public GfpakAssetProvider(string gfpakPath)
         {
@@ -105,6 +106,21 @@ namespace Trinity.Core.Assets
                 throw new FileNotFoundException($"GFPAK entry not found: '{path}' (hash=0x{hash:X16})", path);
             }
 
+            return ReadAllBytesByIndex(index);
+        }
+
+        public byte[] ReadAllBytes(ulong absoluteHash)
+        {
+            if (!absoluteHashToIndex.TryGetValue(absoluteHash, out int index))
+            {
+                throw new FileNotFoundException($"GFPAK entry not found: hash=0x{absoluteHash:X16}");
+            }
+
+            return ReadAllBytesByIndex(index);
+        }
+
+        private byte[] ReadAllBytesByIndex(int index)
+        {
             lock (cacheLock)
             {
                 if (decompressedCache.TryGetValue(index, out var cached))

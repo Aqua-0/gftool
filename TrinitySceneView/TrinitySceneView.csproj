@@ -14,7 +14,25 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GFTool.Core\GFTool.Core.csproj" />
+    <ProjectReference Include="..\GFTool.Renderer\GFTool.Renderer.csproj" />
     <ProjectReference Include="..\GFTool.RenderControl_WinForms\GFTool.RenderControl_WinForms.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter.cs" Link="Export\Gltf\GltfExporter.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Animations.cs" Link="Export\Gltf\GltfExporter\Animations.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Buffer.cs" Link="Export\Gltf\GltfExporter\Buffer.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\GltfSchema.cs" Link="Export\Gltf\GltfExporter\GltfSchema.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Materials.cs" Link="Export\Gltf\GltfExporter\Materials.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Mesh.cs" Link="Export\Gltf\GltfExporter\Mesh.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Skin.cs" Link="Export\Gltf\GltfExporter\Skin.cs" />
+    <Compile Include="..\TrinityModelViewer\Export\Gltf\Exporter\GltfExporter\Textures.cs" Link="Export\Gltf\GltfExporter\Textures.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="FlatbufferSchemas\*.bfbs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

@@ -138,6 +138,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
 
                 PerfCounters.RecordSubmeshDraw();
+                TryUploadPendingCpuMorphVbo(i);
 
                 if (RenderOptions.OutlinePass)
                 {
@@ -198,6 +199,62 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
 
                 GL.BindVertexArray(0);
+            }
+        }
+
+        private void TryUploadPendingCpuMorphVbo(int submeshIndex)
+        {
+            if (submeshIndex < 0 || VBOs == null || submeshIndex >= VBOs.Length)
+            {
+                return;
+            }
+
+            bool needsUpload;
+            lock (morphGate)
+            {
+                needsUpload = pendingMorphVboUploads.Remove(submeshIndex);
+            }
+
+            if (!needsUpload)
+            {
+                return;
+            }
+
+            // Only update the streams affected by CPU morphing.
+            // Layout must match SetupSubmeshGpu.
+            try
+            {
+                var vertSize = Positions[submeshIndex].Length * Vector3.SizeInBytes;
+                var normSize = Normals[submeshIndex].Length * Vector3.SizeInBytes;
+                var uvSize = UVs[submeshIndex].Length * Vector2.SizeInBytes;
+                var uv2Size = UVs2[submeshIndex].Length * Vector2.SizeInBytes;
+                var colorSize = Colors[submeshIndex].Length * Vector4.SizeInBytes;
+                var tangentSize = Tangents[submeshIndex].Length * Vector4.SizeInBytes;
+                var binormalSize = Binormals[submeshIndex].Length * Vector3.SizeInBytes;
+
+                int vbo = VBOs[submeshIndex];
+                if (vbo == 0)
+                {
+                    return;
+                }
+
+                GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+
+                IntPtr offsetPos = IntPtr.Zero;
+                IntPtr offsetNorm = offsetPos + vertSize;
+                IntPtr offsetTangent = offsetNorm + normSize + uvSize + uv2Size + colorSize;
+                IntPtr offsetBinormal = offsetTangent + tangentSize;
+
+                GL.BufferSubData(BufferTarget.ArrayBuffer, offsetPos, vertSize, ToUnmanagedByteArray(Positions[submeshIndex]));
+                GL.BufferSubData(BufferTarget.ArrayBuffer, offsetNorm, normSize, ToUnmanagedByteArray(Normals[submeshIndex]));
+                GL.BufferSubData(BufferTarget.ArrayBuffer, offsetTangent, tangentSize, ToUnmanagedByteArray(Tangents[submeshIndex]));
+                GL.BufferSubData(BufferTarget.ArrayBuffer, offsetBinormal, binormalSize, ToUnmanagedByteArray(Binormals[submeshIndex]));
+
+                GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+            }
+            catch
+            {
+                try { GL.BindBuffer(BufferTarget.ArrayBuffer, 0); } catch { }
             }
         }
 	    }

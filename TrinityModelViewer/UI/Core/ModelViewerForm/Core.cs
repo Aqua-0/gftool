@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Trinity.Core.Assets;
+using Trinity.Core.Flatbuffers.TR.Model;
 using TrinityModelViewer.Export;
 
 namespace TrinityModelViewer
@@ -18,375 +19,13 @@ namespace TrinityModelViewer
         private bool shaderWarmupCompleted;
         private Task? flatSharpWarmupTask;
 
-		        private void ExportTrinityFromSelection()
-		        {
-		            var selected = sceneTree.SelectedNode;
-		            if (selected?.Tag is not NodeTag tag || tag.Type != NodeType.ModelRoot)
-	            {
-	                MessageBox.Show(this, "Select a model root node first (the top-level model entry in the scene tree).", "Export Trinity",
-	                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-	                return;
-	            }
+        private void ClearAll()
+        {
+            sceneModelManager.DisposeAssetProviders();
+            ClearTeraPtclEffects();
 
-		            bool hasGltfPreview = gltfImportContextByModel.TryGetValue(tag.Model, out var ctx);
-		            string? referenceTrmdlPath = hasGltfPreview
-		                ? ctx.ReferenceTrmdlPath
-		                : (sceneModelManager.TryGetModelSourcePath(tag.Model, out var src) ? src : null);
-
-	            if (string.IsNullOrWhiteSpace(referenceTrmdlPath) || !File.Exists(referenceTrmdlPath))
-	            {
-	                MessageBox.Show(this, "Could not resolve the source .trmdl path for this model.", "Export Trinity",
-	                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-	                return;
-	            }
-
-	            using var sfd = new SaveFileDialog();
-	            sfd.Title = "Export Trinity Model Set (.trmdl)";
-	            sfd.Filter = "TRMDL (*.trmdl)|*.trmdl";
-	            string initialDir = Environment.CurrentDirectory;
-	            if (!string.IsNullOrWhiteSpace(settings.LastExportTrinityDirectory) && Directory.Exists(settings.LastExportTrinityDirectory))
-	            {
-	                initialDir = settings.LastExportTrinityDirectory;
-	            }
-		            else
-		            {
-		                var srcDir = Path.GetDirectoryName(referenceTrmdlPath);
-		                if (!string.IsNullOrWhiteSpace(srcDir))
-		                {
-		                    initialDir = Path.Combine(srcDir, "trinity_export");
-		                }
-		            }
-
-		            if (!Directory.Exists(initialDir))
-		            {
-		                Directory.CreateDirectory(initialDir);
-		            }
-
-	            sfd.InitialDirectory = initialDir;
-	            sfd.FileName = Path.GetFileName(referenceTrmdlPath);
-	            if (sfd.ShowDialog(this) != DialogResult.OK)
-	            {
-	                return;
-	            }
-
-		            try
-		            {
-		                var outFull = Path.GetFullPath(sfd.FileName);
-		                var refFull = Path.GetFullPath(referenceTrmdlPath);
-		                if (string.Equals(outFull, refFull, StringComparison.OrdinalIgnoreCase))
-	                {
-	                    MessageBox.Show(this, "Refusing to export over the original imported .trmdl. Pick a different output path.", "Export Trinity",
-	                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-	                    return;
-	                }
-
-		                if (hasGltfPreview)
-		                {
-		                    TrinityModelViewer.Export.GltfTrinityPipeline.Export(
-		                        referenceTrmdlPath,
-		                        ctx.GltfPath,
-		                        sfd.FileName,
-		                        patchBaseColorTextures: false,
-		                        exportModelPcBaseOnExport: settings.ExportModelPcBaseOnExport);
-		                }
-		                else
-		                {
-		                    TrinityModelViewer.Export.TrinityModelSetExporter.ExportCopy(referenceTrmdlPath, sfd.FileName);
-		                }
-
-		                var patchNotes = new List<string>();
-		                if (settings.AutoGenerateLodsOnExport)
-		                {
-		                    if (TrinityModelViewer.Export.TrmdlLodPatcher.ForceAllLodsToUseMesh0(sfd.FileName, out var lodError))
-		                    {
-		                        patchNotes.Add("Auto-generate LODs: forced all LODs to use LOD0 mesh (placeholder).");
-		                    }
-		                    else if (!string.IsNullOrWhiteSpace(lodError))
-		                    {
-		                        patchNotes.Add($"Auto-generate LODs failed: {lodError}");
-		                    }
-		                }
-		                TryPatchExportedTrinityMaterials(sfd.FileName, tag.Model, patchNotes);
-
-		                settings.LastExportTrinityDirectory = Path.GetDirectoryName(sfd.FileName) ?? settings.LastExportTrinityDirectory;
-		                settings.Save();
-		                var msg = $"Exported:\n{sfd.FileName}";
-		                if (patchNotes.Count > 0)
-		                {
-		                    msg += "\n\nNotes:\n- " + string.Join("\n- ", patchNotes.Distinct());
-		                }
-		                MessageBox.Show(this, msg, "Export Trinity", MessageBoxButtons.OK, MessageBoxIcon.Information);
-		            }
-			            catch (Exception ex)
-			            {
-			                MessageBox.Show(this, $"Export failed:\n{ex.Message}", "Export Trinity", MessageBoxButtons.OK, MessageBoxIcon.Error);
-			            }
-			        }
-
-		        private void TryPatchExportedTrinityMaterials(string exportedTrmdlPath, Model model, List<string> notes)
-		        {
-		            if (model == null) throw new ArgumentNullException(nameof(model));
-		            if (notes == null) throw new ArgumentNullException(nameof(notes));
-
-		            bool hasUniformEdits = model.GetMaterials().Any(m => m.HasUniformOverrides);
-		            bool hasMetadataEdits = model.HasMaterialMetadataSelectionOverrides || model.HasMaterialMetadataValueOverrides;
-		            if (!hasUniformEdits && !hasMetadataEdits)
-		            {
-		                return;
-		            }
-
-		            if (string.IsNullOrWhiteSpace(exportedTrmdlPath) || !File.Exists(exportedTrmdlPath))
-		            {
-		                notes.Add("Skipped applying runtime material edits (exported TRMDL not found).");
-		                return;
-		            }
-
-		            Trinity.Core.Flatbuffers.TR.Model.TRMDL? trmdl = null;
-		            try
-		            {
-		                trmdl = Trinity.Core.Utils.FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TRMDL>(exportedTrmdlPath);
-		            }
-		            catch (Exception ex)
-		            {
-		                notes.Add($"Failed to read exported TRMDL for material patching: {ex.Message}");
-		                return;
-		            }
-
-		            if (trmdl == null)
-		            {
-		                notes.Add("Failed to read exported TRMDL for material patching.");
-		                return;
-		            }
-
-		            var outputDir = Path.GetDirectoryName(Path.GetFullPath(exportedTrmdlPath)) ?? Environment.CurrentDirectory;
-		            var outputDirFull = Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-
-		            var trmtrPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		            var materialRels = trmdl.Materials ?? Array.Empty<string>();
-		            foreach (var relRaw in materialRels)
-		            {
-		                if (string.IsNullOrWhiteSpace(relRaw))
-		                {
-		                    continue;
-		                }
-
-		                var rel = relRaw.Replace('\\', '/');
-		                var abs = Path.GetFullPath(Path.Combine(outputDir, rel));
-		                if (!abs.StartsWith(outputDirFull, StringComparison.OrdinalIgnoreCase))
-		                {
-		                    continue;
-		                }
-
-		                trmtrPaths.Add(abs);
-
-		                // Patch sibling material-set variants too (`<stem>_00.trmtr`, etc), if present.
-		                try
-		                {
-		                    var relDir = Path.GetDirectoryName(rel)?.Replace('\\', '/') ?? string.Empty;
-		                    var dirAbs = string.IsNullOrWhiteSpace(relDir) ? outputDir : Path.Combine(outputDir, relDir);
-		                    if (!Directory.Exists(dirAbs))
-		                    {
-		                        continue;
-		                    }
-
-		                    var stem = Path.GetFileNameWithoutExtension(rel);
-		                    if (string.IsNullOrWhiteSpace(stem))
-		                    {
-		                        continue;
-		                    }
-
-		                    foreach (var variant in Directory.EnumerateFiles(dirAbs, stem + "_*.trmtr"))
-		                    {
-		                        trmtrPaths.Add(Path.GetFullPath(variant));
-		                    }
-		                }
-		                catch
-		                {
-		                    // Ignore.
-		                }
-		            }
-
-		            int trmtrProcessed = 0;
-		            if (hasUniformEdits && trmtrPaths.Count > 0)
-		            {
-		                foreach (var path in trmtrPaths)
-		                {
-		                    if (!File.Exists(path))
-		                    {
-		                        continue;
-		                    }
-		                    try
-		                    {
-		                        TrmtrBinaryPatcher.PatchTrmtrInPlace(path, model);
-		                        trmtrProcessed++;
-		                    }
-		                    catch (Exception ex)
-		                    {
-		                        notes.Add($"TRMTR patch failed for '{Path.GetFileName(path)}': {ex.Message}");
-		                    }
-		                }
-		            }
-
-			            if (trmtrProcessed > 0)
-			            {
-			                notes.Add($"Applied Params-tab overrides to {trmtrProcessed} TRMTR file(s).");
-			            }
-			            if (hasUniformEdits && trmtrProcessed == 0)
-			            {
-			                notes.Add("No TRMTR files were available to patch with Params-tab overrides.");
-			            }
-			        }
-
-		        private void ExportTrinityPatchFromSelection()
-		        {
-		            var selected = sceneTree.SelectedNode;
-		            if (selected?.Tag is not NodeTag tag || tag.Type != NodeType.ModelRoot)
-	            {
-	                MessageBox.Show(this, "Select a model root node first (the top-level model entry in the scene tree).", "Export Trinity (Edited Only)",
-	                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-	                return;
-	            }
-
-		            if (!sceneModelManager.TryGetModelSourcePath(tag.Model, out var referenceTrmdlPath) ||
-		                string.IsNullOrWhiteSpace(referenceTrmdlPath) ||
-		                !File.Exists(referenceTrmdlPath))
-		            {
-	                MessageBox.Show(this, "Could not resolve the source .trmdl path for this model.", "Export Trinity (Edited Only)",
-	                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-	                return;
-	            }
-
-			            if (!tag.Model.GetMaterials().Any(m => m.HasUniformOverrides) &&
-			                !tag.Model.GetMaterials().SelectMany(m => m.Textures).Any(t => t.IsEdited) &&
-			                !tag.Model.HasMaterialMetadataSelectionOverrides &&
-			                !tag.Model.HasMaterialMetadataValueOverrides)
-			            {
-			                MessageBox.Show(this, "No edited materials/textures detected for this model.", "Export Trinity (Edited Only)",
-			                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-			                return;
-		            }
-
-	            using var fbd = new FolderBrowserDialog();
-	            fbd.Description = "Select output folder for edited assets (writes only modified files).";
-	            var refDir = Path.GetDirectoryName(referenceTrmdlPath) ?? Environment.CurrentDirectory;
-	            if (!string.IsNullOrWhiteSpace(settings.LastExportTrinityDirectory) && Directory.Exists(settings.LastExportTrinityDirectory))
-	            {
-	                fbd.SelectedPath = settings.LastExportTrinityDirectory;
-	            }
-	            else
-	            {
-	                fbd.SelectedPath = Path.Combine(refDir, "trinity_export_patch");
-	            }
-
-	            if (fbd.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(fbd.SelectedPath))
-	            {
-	                return;
-	            }
-
-	            var outputRoot = fbd.SelectedPath;
-	            Directory.CreateDirectory(outputRoot);
-
-	            int exportedCount = 0;
-	            var warnings = new List<string>();
-
-	            try
-	            {
-	                var mdl = tag.Model;
-
-		                if (!string.IsNullOrWhiteSpace(mdl.CurrentMaterialFilePath) &&
-		                    File.Exists(mdl.CurrentMaterialFilePath) &&
-		                    mdl.GetMaterials().Any(m => m.HasUniformOverrides))
-		                {
-	                    string rel = Path.GetRelativePath(refDir, mdl.CurrentMaterialFilePath);
-	                    if (rel.StartsWith(".."))
-	                    {
-	                        rel = Path.GetFileName(mdl.CurrentMaterialFilePath);
-	                    }
-	                    string dst = Path.Combine(outputRoot, rel);
-	                    Directory.CreateDirectory(Path.GetDirectoryName(dst) ?? outputRoot);
-		                    TrinityModelViewer.Export.EditedMaterialExporter.ExportEditedTrmtr(mdl.CurrentMaterialFilePath, mdl, dst);
-		                    exportedCount++;
-		                }
-
-			                if (mdl.HasMaterialMetadataSelectionOverrides || mdl.HasMaterialMetadataValueOverrides)
-			                {
-			                    var trmmtSource = Path.ChangeExtension(referenceTrmdlPath, ".trmmt");
-			                    if (!string.IsNullOrWhiteSpace(trmmtSource) && File.Exists(trmmtSource))
-			                    {
-		                        string rel = Path.GetRelativePath(refDir, trmmtSource);
-		                        if (rel.StartsWith(".."))
-		                        {
-		                            rel = Path.GetFileName(trmmtSource);
-		                        }
-		                        string dst = Path.Combine(outputRoot, rel);
-		                        Directory.CreateDirectory(Path.GetDirectoryName(dst) ?? outputRoot);
-		                        TrinityModelViewer.Export.EditedMaterialMetadataExporter.ExportEditedTrmmt(trmmtSource, mdl, dst);
-		                        exportedCount++;
-		                    }
-		                }
-
-	                foreach (var tex in mdl.GetMaterials().SelectMany(m => m.Textures).DistinctBy(t => t.CacheKey))
-	                {
-	                    if (!tex.IsEdited)
-	                    {
-	                        continue;
-	                    }
-
-	                    if (!tex.TryGetEditedBitmap(out var bmp))
-	                    {
-	                        continue;
-	                    }
-
-	                    using (bmp)
-	                    {
-	                        string srcPath = string.Empty;
-	                        tex.TryGetResolvedSourcePath(out srcPath);
-	                        string rel = Path.GetRelativePath(refDir, srcPath);
-	                        if (rel.StartsWith(".."))
-	                        {
-	                            rel = Path.GetFileName(srcPath);
-	                        }
-
-	                        string ext = Path.GetExtension(rel);
-	                        if (!ext.Equals(".png", StringComparison.OrdinalIgnoreCase) &&
-	                            !ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) &&
-	                            !ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) &&
-	                            !ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase))
-	                        {
-	                            warnings.Add($"Edited texture '{tex.Name}' was sourced from '{ext}'. Exporting as PNG (BNTX encode not supported).");
-	                            rel = Path.ChangeExtension(rel, ".png");
-	                        }
-
-	                        string dst = Path.Combine(outputRoot, rel);
-	                        Directory.CreateDirectory(Path.GetDirectoryName(dst) ?? outputRoot);
-	                        bmp.Save(dst, System.Drawing.Imaging.ImageFormat.Png);
-	                        exportedCount++;
-	                    }
-	                }
-
-	                settings.LastExportTrinityDirectory = outputRoot;
-	                settings.Save();
-	            }
-	            catch (Exception ex)
-	            {
-	                MessageBox.Show(this, $"Export failed:\n{ex.Message}", "Export Trinity (Edited Only)", MessageBoxButtons.OK, MessageBoxIcon.Error);
-	                return;
-	            }
-
-	            var msg = $"Exported {exportedCount} edited file(s) to:\n{outputRoot}";
-	            if (warnings.Count > 0)
-	            {
-	                msg += "\n\nNotes:\n- " + string.Join("\n- ", warnings.Distinct());
-	            }
-	            MessageBox.Show(this, msg, "Export Trinity (Edited Only)", MessageBoxButtons.OK, MessageBoxIcon.Information);
-	        }
-
-	        private void ClearAll()
-	        {
-	            sceneModelManager.DisposeAssetProviders();
-
-	            renderCtrl.renderer.ClearScene();
-	            renderCtrl.renderer.StopAnimation();
+            renderCtrl.renderer.ClearScene();
+            renderCtrl.renderer.StopAnimation();
 	            messageListView.Items.Clear();
             materialList.Items.Clear();
             materialList.Columns.Clear();
@@ -498,12 +137,14 @@ namespace TrinityModelViewer
                 return;
             }
 
-		            if (!mdl.GetMaterials().Any(m => m.HasUniformOverrides) &&
-		                !mdl.HasMaterialMetadataSelectionOverrides &&
-		                !mdl.HasMaterialMetadataValueOverrides)
-		            {
-		                var r = MessageBox.Show(this, "No edited material parameters detected (no overrides).\nExport anyway?", "Export Materials",
-		                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+	            if (!mdl.GetMaterials().Any(m => m.HasUniformOverrides) &&
+	                !mdl.GetMaterials().Any(m => m.HasSamplerOverrides) &&
+	                !mdl.HasMaterialSourceEdits &&
+	                !mdl.HasMaterialMetadataSelectionOverrides &&
+	                !mdl.HasMaterialMetadataValueOverrides)
+	            {
+	                var r = MessageBox.Show(this, "No edited material parameters detected (no overrides).\nExport anyway?", "Export Materials",
+	                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 		                if (r != DialogResult.Yes)
 		                {
                     return;
@@ -523,7 +164,10 @@ namespace TrinityModelViewer
 		            {
 		                TrinityModelViewer.Export.EditedMaterialExporter.ExportEditedTrmtr(mdl.CurrentMaterialFilePath, mdl, sfd.FileName);
 		                string? trmmtOut = null;
-		                if (mdl.HasMaterialMetadataSelectionOverrides || mdl.HasMaterialMetadataValueOverrides)
+		                var cloneRequests = mdl.GetNewMaterialCloneRequestsSnapshot();
+		                bool wantsTrmmt = (mdl.HasMaterialMetadataSelectionOverrides || mdl.HasMaterialMetadataValueOverrides) ||
+		                                 cloneRequests.Any(r => r.TrmmtCloneMode != Model.NewMaterialTrmmtCloneMode.None);
+		                if (wantsTrmmt)
 		                {
 		                    string? trmmtSource = mdl.LoadedMaterialMetadataPath ?? mdl.PreferredMaterialMetadataPath;
 		                    if (string.IsNullOrWhiteSpace(trmmtSource) && !string.IsNullOrWhiteSpace(mdl.CurrentMaterialFilePath))
@@ -598,14 +242,14 @@ namespace TrinityModelViewer
                 PopulateMaterials(mdl);
                 ReportModelLoadProgress(85);
 
-	                if (assetProvider == null)
-	                {
-	                    TryAutoLoadAnimations(filePath);
-	                }
-	                else
-	                {
-	                    sceneModelManager.RegisterAssetProvider(assetProvider);
-	                }
+                if (assetProvider == null)
+                {
+                    TryAutoLoadAnimations(filePath);
+                }
+                else
+                {
+                    sceneModelManager.RegisterAssetProvider(assetProvider);
+                }
                 ReportModelLoadProgress(95);
 
                 // Default to "solo" display for the most recently added model unless multi-model display is enabled.
@@ -613,15 +257,22 @@ namespace TrinityModelViewer
                 sceneTree.SelectedNode = node;
                 node.EnsureVisible();
 
-	                if (assetProvider == null && !transient)
-	                {
-	                    settings.LastModelPath = filePath;
-	                    settings.Save();
-	                    UpdateLastModelMenu();
-	                    AddRecentModel(filePath);
-	                    sceneModelManager.AddLoadedModelPath(filePath);
-	                    sceneModelManager.SetModelSourcePath(mdl, filePath);
-	                }
+                if (!transient)
+                {
+                    if (assetProvider == null)
+                    {
+                        settings.LastModelPath = filePath;
+                        settings.Save();
+                        UpdateLastModelMenu();
+                        AddRecentModel(filePath);
+                        sceneModelManager.AddLoadedModelPath(filePath);
+                        sceneModelManager.SetModelSourcePath(mdl, filePath);
+                    }
+                    else if (assetProvider is Trinity.Core.Assets.GfpakAssetProvider gfpakProvider)
+                    {
+                        sceneModelManager.SetModelGfpakSource(mdl, gfpakProvider.ContainerPath, filePath);
+                    }
+                }
 
                 if (settings.ShowMultipleModels && renderCtrl.renderer.HasActiveAnimation())
                 {

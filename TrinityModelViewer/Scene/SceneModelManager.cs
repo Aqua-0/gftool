@@ -9,6 +9,7 @@ namespace TrinityModelViewer.Scene
     internal sealed class SceneModelManager
     {
         private readonly Dictionary<Model, string> modelSourcePaths = new Dictionary<Model, string>();
+        private readonly Dictionary<Model, (string ContainerPath, string EntryPath)> modelGfpakSources = new Dictionary<Model, (string, string)>();
         private readonly List<string> loadedModelPaths = new List<string>();
         private readonly HashSet<Model> hiddenModels = new HashSet<Model>();
         private readonly List<IAssetProvider> activeAssetProviders = new List<IAssetProvider>();
@@ -17,6 +18,20 @@ namespace TrinityModelViewer.Scene
         public IReadOnlyList<string> LoadedModelPaths => loadedModelPaths;
 
         public bool TryGetModelSourcePath(Model model, out string path) => modelSourcePaths.TryGetValue(model, out path!);
+
+        public bool TryGetModelGfpakSource(Model model, out string containerPath, out string entryPath)
+        {
+            if (modelGfpakSources.TryGetValue(model, out var v))
+            {
+                containerPath = v.ContainerPath;
+                entryPath = v.EntryPath;
+                return true;
+            }
+
+            containerPath = string.Empty;
+            entryPath = string.Empty;
+            return false;
+        }
 
         public void SetModelSourcePath(Model model, string path)
         {
@@ -28,6 +43,16 @@ namespace TrinityModelViewer.Scene
             modelSourcePaths[model] = path;
         }
 
+        public void SetModelGfpakSource(Model model, string containerPath, string entryPath)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(containerPath) || string.IsNullOrWhiteSpace(entryPath))
+            {
+                return;
+            }
+
+            modelGfpakSources[model] = (containerPath, entryPath);
+        }
+
         public void RemoveModelSourcePath(Model model)
         {
             if (model == null)
@@ -36,6 +61,7 @@ namespace TrinityModelViewer.Scene
             }
 
             modelSourcePaths.Remove(model);
+            modelGfpakSources.Remove(model);
         }
 
         public void AddLoadedModelPath(string path)
@@ -96,6 +122,7 @@ namespace TrinityModelViewer.Scene
         public void ClearSceneTracking()
         {
             modelSourcePaths.Clear();
+            modelGfpakSources.Clear();
             hiddenModels.Clear();
             loadedModelPaths.Clear();
         }

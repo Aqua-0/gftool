@@ -48,6 +48,8 @@ namespace TrinityModelViewer
             ApplyTheme();
             AddSettingsMenu();
             AddToolsMenu();
+            AddPokemonLoaderMenu();
+            AddLayoutMenuItems();
             AddGfpakMenuItems();
             AddTrinityExportMenuItems();
             AddSkinningMenuItems();
@@ -55,6 +57,7 @@ namespace TrinityModelViewer
             AddLastModelMenu();
             AddRecentModelsMenu();
             InitializePerfHud();
+            InitializeLayoutFixes();
             renderCtrl.RendererReady += renderCtrl_RendererReady;
             AllowDrop = true;
             DragEnter += ModelViewerForm_DragEnter;
@@ -73,6 +76,7 @@ namespace TrinityModelViewer
             sceneTree.NodeMouseClick += sceneTree_NodeMouseClick;
             SetupAnimationsList();
             SetupJsonEditorTab();
+            SetupMorphTargetsTab();
         }
     }
 }

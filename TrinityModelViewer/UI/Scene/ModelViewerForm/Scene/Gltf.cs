@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using TrinityModelViewer.Export;
 
 namespace TrinityModelViewer
 {
@@ -148,9 +149,28 @@ namespace TrinityModelViewer
 
         private async void ImportGltf(Model referenceModel)
         {
-            if (!sceneModelManager.TryGetModelSourcePath(referenceModel, out var referenceTrmdlPath) || string.IsNullOrWhiteSpace(referenceTrmdlPath))
+            string? referenceTrmdlPath = null;
+            bool referenceIsGfpak = false;
+            string? gfpakPath = null;
+            string? gfpakEntry = null;
+
+            if (sceneModelManager.TryGetModelSourcePath(referenceModel, out var src) &&
+                !string.IsNullOrWhiteSpace(src) &&
+                File.Exists(src))
             {
-                MessageBox.Show(this, "This model doesn't have a disk source path (it may be loaded from a GFPAK).", "Import glTF",
+                referenceTrmdlPath = src;
+            }
+            else if (sceneModelManager.TryGetModelGfpakSource(referenceModel, out var container, out var entry) &&
+                     !string.IsNullOrWhiteSpace(container) &&
+                     !string.IsNullOrWhiteSpace(entry))
+            {
+                referenceIsGfpak = true;
+                gfpakPath = container;
+                gfpakEntry = entry;
+            }
+            else
+            {
+                MessageBox.Show(this, "Could not resolve the source .trmdl path for this model.", "Import glTF",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -167,8 +187,45 @@ namespace TrinityModelViewer
             string tempDir = Path.Combine(Path.GetTempPath(), "TrinityModelViewer", "gltf_import", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
 
-            var fallbackRoot = TryResolveDomainRoot(referenceTrmdlPath) ?? (Path.GetDirectoryName(referenceTrmdlPath) ?? string.Empty);
-            string outTrmdl = BuildGltfImportOutputTrmdlPath(tempDir, referenceTrmdlPath, fallbackRoot);
+            string fallbackRoot;
+            string outTrmdl;
+            string overlayRoot = tempDir;
+            if (referenceIsGfpak)
+            {
+                string refRoot = Path.Combine(tempDir, "ref");
+                string outRoot = Path.Combine(tempDir, "out");
+                Directory.CreateDirectory(refRoot);
+                Directory.CreateDirectory(outRoot);
+
+                try
+                {
+                    referenceTrmdlPath = GfpakModelSetExtractor.ExtractModelSetToDirectory(gfpakPath!, gfpakEntry!, refRoot, includeProtagBaseSkeleton: true);
+                }
+                catch (DllNotFoundException ex)
+                {
+                    MessageBox.Show(this,
+                        $"This GFPAK appears to require Oodle decompression.\n\nPlace `oo2core_8_win64.dll` next to the executable, then try again.\n\n{ex.Message}",
+                        "Missing Oodle", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Failed to extract reference model from GFPAK:\n{ex.Message}", "Import glTF",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                var rel = Path.GetRelativePath(refRoot, referenceTrmdlPath);
+                outTrmdl = Path.Combine(outRoot, rel);
+                fallbackRoot = refRoot;
+                overlayRoot = outRoot;
+            }
+            else
+            {
+                fallbackRoot = TryResolveDomainRoot(referenceTrmdlPath!) ?? (Path.GetDirectoryName(referenceTrmdlPath!) ?? string.Empty);
+                outTrmdl = BuildGltfImportOutputTrmdlPath(tempDir, referenceTrmdlPath!, fallbackRoot);
+            }
+
             var outDir = Path.GetDirectoryName(outTrmdl);
             if (!string.IsNullOrWhiteSpace(outDir))
             {
@@ -191,7 +248,7 @@ namespace TrinityModelViewer
                 }
 
                 var importProvider = !string.IsNullOrWhiteSpace(fallbackRoot)
-                    ? new Trinity.Core.Assets.OverlayDiskAssetProvider(tempDir, fallbackRoot)
+                    ? new Trinity.Core.Assets.OverlayDiskAssetProvider(overlayRoot, fallbackRoot)
                     : null;
 
                 var importedModel = await AddModelToSceneAsync(outTrmdl, assetProvider: importProvider, transient: true);
@@ -200,6 +257,12 @@ namespace TrinityModelViewer
                     return;
                 }
                 importedModel.ReplaceMaterials(referenceModel.GetMaterials());
+                importedModel.MarkTrmdlDirty(importedModel.TrmdlSourcePath);
+                importedModel.MarkLoadedMeshesDirty(includeBuffers: true);
+                if (!string.IsNullOrWhiteSpace(importedModel.CurrentSkeletonPath))
+                {
+                    importedModel.MarkTrsklDirty(importedModel.CurrentSkeletonPath);
+                }
                 PopulateMaterials(importedModel);
                 gltfImportContextByModel[importedModel] = (referenceTrmdlPath, gltfPath);
                 // Preserve the original on-disk Trinity file set in the Json Editor after replacing the model with a

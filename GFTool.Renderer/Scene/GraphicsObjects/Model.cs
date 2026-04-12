@@ -10,7 +10,7 @@ using System;
 using Trinity.Core.Assets;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
+using Trinity.Core.Flatbuffers.Gfx2;
 
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
@@ -19,7 +19,10 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	    {
         private readonly IAssetProvider assetProvider;
         private PathString modelPath;
+        private string trmdlSourcePath;
+        private bool loadedAllLods;
         private string? baseSkeletonCategoryHint;
+        private readonly List<string> loadedMeshFiles = new List<string>();
 
         public string Name { get; private set; }
         private long lastAnimAllocPoseComputeBytes;
@@ -88,25 +91,38 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	        public Model(IAssetProvider assetProvider, string model, bool loadAllLods)
 	        {
 	            this.assetProvider = assetProvider ?? throw new ArgumentNullException(nameof(assetProvider));
+	            ClearDirtyFlags();
 	            Name = Path.GetFileNameWithoutExtension(model);
 	            modelMat = Matrix4.Identity;
 	            modelPath = new PathString(model);
+	            trmdlSourcePath = model;
+	            loadedAllLods = loadAllLods;
 	            preferredMaterialMetadataPath = Path.ChangeExtension(model, ".trmmt");
 
 	            var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(this.assetProvider.ReadAllBytes(model));
 
             //Meshes
-            if (loadAllLods)
+            if (mdl.Meshes == null || mdl.Meshes.Length == 0)
+            {
+                MessageHandler.Instance.AddMessage(
+                    MessageType.WARNING,
+                    $"[TRMDL] '{model}': no meshes (Meshes.Length=0).");
+            }
+            else if (loadAllLods)
             {
                 foreach (var mesh in mdl.Meshes)
                 {
-                    ParseMesh(modelPath.Combine(mesh.PathName));
+                    var meshPath = modelPath.Combine(mesh.PathName);
+                    loadedMeshFiles.Add(meshPath);
+                    ParseMesh(meshPath);
                 }
             }
             else
             {
                 var mesh = mdl.Meshes[0]; //LOD0
-                ParseMesh(modelPath.Combine(mesh.PathName));
+                var meshPath = modelPath.Combine(mesh.PathName);
+                loadedMeshFiles.Add(meshPath);
+                ParseMesh(meshPath);
             }
 
             baseSkeletonCategoryHint = GuessBaseSkeletonCategory(
@@ -169,26 +185,182 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             ResolveRigidParentAttachments();
         }
 
-        private bool TryParseBaseArmature(string trmdlPath, string? category)
+        public void ReloadFromTrmdlSource(string trmdlPath, bool loadAllLods)
         {
-            if (assetProvider is not (DiskAssetProvider or Trinity.Core.Assets.OverlayDiskAssetProvider) || string.IsNullOrWhiteSpace(category))
+            if (string.IsNullOrWhiteSpace(trmdlPath))
             {
-                return false;
+                throw new ArgumentException("Missing TRMDL path.", nameof(trmdlPath));
             }
 
-            var modelDir = Path.GetDirectoryName(trmdlPath);
-            if (string.IsNullOrWhiteSpace(modelDir))
-            {
-                return false;
-            }
+            ClearDirtyFlags();
+            trmdlSourcePath = trmdlPath;
+            loadedAllLods = loadAllLods;
+            modelPath = new PathString(trmdlPath);
+            preferredMaterialMetadataPath = Path.ChangeExtension(trmdlPath, ".trmmt");
 
-            var basePath = ResolveBaseTrsklPath(modelDir, category!, localSkel: null);
-            if (string.IsNullOrWhiteSpace(basePath) || !File.Exists(basePath))
+            // Clear mesh-derived data and runtime state.
+            Positions.Clear();
+            Normals.Clear();
+            UVs.Clear();
+            UVs2.Clear();
+            HasUv1.Clear();
+            Colors.Clear();
+            Tangents.Clear();
+            Binormals.Clear();
+            BlendIndicies.Clear();
+            BlendIndiciesOriginal.Clear();
+            BlendWeights.Clear();
+            BlendBoneWeights.Clear();
+            BlendMeshNames.Clear();
+
+            Indices.Clear();
+            HasVertexColors.Clear();
+            HasTangents.Clear();
+            HasBinormals.Clear();
+            HasSkinning.Clear();
+
+            MaterialNames.Clear();
+            SubmeshNames.Clear();
+            SubmeshParentNodeNames.Clear();
+            rigidParentBoneIndexBySubmesh = null;
+            uvOverridesBySubmesh.Clear();
+            selectedSubmeshIndex = -1;
+            loadedMeshFiles.Clear();
+
+            lock (morphGate)
             {
-                if (MessageHandler.Instance.DebugLogsEnabled)
+                fullMorphTargetsByMeshShapeName.Clear();
+                partialMorphTargetsByMeshShapeName.Clear();
+                fullMorphWeights.Clear();
+                vertexBuffersByMeshShapeName.Clear();
+                pendingMorphVboUploads.Clear();
+                unsupportedFullMorphTargets.Clear();
+                cpuFullMorphRegistrationStatus = null;
+            }
+            basePositionsBySubmeshIndex.Clear();
+            baseNormalsBySubmeshIndex.Clear();
+            baseTangentsBySubmeshIndex.Clear();
+            baseBinormalsBySubmeshIndex.Clear();
+
+            baseSkeletonCategoryHint = null;
+            armature = null;
+            armatureOverride = null;
+
+            hasMaterialSourceEdits = false;
+            newMaterialCloneRequests.Clear();
+            currentMaterialFilePath = null;
+            currentMaterialSetName = null;
+            defaultMaterialFilePath = null;
+            materialMetadata = null;
+            materialMetadataPath = null;
+            materialMetadataSelections.Clear();
+            materialMetadataValueOverrides.Clear();
+            materialMetadataLastAppliedUniformNames.Clear();
+
+            if (materials != null)
+            {
+                foreach (var existing in materials)
                 {
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.LOG,
+                    existing?.Dispose();
+                }
+            }
+            materials = null!;
+            materialMap.Clear();
+
+            // Reset GPU setup so the renderer can re-upload buffers.
+            gpuSetupComplete = false;
+            gpuSetupIndex = -1;
+            VAOs = null!;
+            VBOs = null!;
+            EBOs = null!;
+
+            var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(assetProvider.ReadAllBytes(trmdlPath));
+
+            // Meshes
+            if (loadAllLods)
+            {
+                foreach (var mesh in mdl.Meshes)
+                {
+                    var meshPath = modelPath.Combine(mesh.PathName);
+                    loadedMeshFiles.Add(meshPath);
+                    ParseMesh(meshPath);
+                }
+            }
+            else
+            {
+                var mesh = mdl.Meshes[0]; // LOD0
+                var meshPath = modelPath.Combine(mesh.PathName);
+                loadedMeshFiles.Add(meshPath);
+                ParseMesh(meshPath);
+            }
+
+            baseSkeletonCategoryHint = GuessBaseSkeletonCategory(
+                trmdlPath,
+                mdl.Meshes != null && mdl.Meshes.Length > 0 ? mdl.Meshes[0].PathName : null,
+                mdl.Skeleton?.PathName);
+
+            // Materials
+            if (mdl.Materials != null && mdl.Materials.Length > 0)
+            {
+                var resolvedMaterials = new List<string>(mdl.Materials.Length);
+                foreach (var mat in mdl.Materials)
+                {
+                    if (string.IsNullOrWhiteSpace(mat))
+                    {
+                        continue;
+                    }
+                    resolvedMaterials.Add(ResolveTrmtrPath(modelPath.Combine(mat), this.assetProvider));
+                }
+
+                if (resolvedMaterials.Count > 0)
+                {
+                    ParseMaterial(resolvedMaterials[resolvedMaterials.Count - 1]);
+                }
+            }
+
+            defaultMaterialFilePath = currentMaterialFilePath;
+
+            // Skeleton
+            if (mdl.Skeleton != null)
+            {
+                if (!string.IsNullOrWhiteSpace(mdl.Skeleton.PathName))
+                {
+                    ParseArmature(modelPath.Combine(mdl.Skeleton.PathName));
+                }
+                else
+                {
+                    TryParseBaseArmature(trmdlPath, baseSkeletonCategoryHint);
+                }
+            }
+            else
+            {
+                TryParseBaseArmature(trmdlPath, baseSkeletonCategoryHint);
+            }
+
+            ResolveRigidParentAttachments();
+        }
+
+	        private bool TryParseBaseArmature(string trmdlPath, string? category)
+	        {
+	            var provider = assetProvider is InMemoryOverrideAssetProvider mem ? mem.Inner : assetProvider;
+	            if (provider is not (DiskAssetProvider or Trinity.Core.Assets.OverlayDiskAssetProvider) || string.IsNullOrWhiteSpace(category))
+	            {
+	                return false;
+	            }
+
+	            var modelDir = Path.GetDirectoryName(trmdlPath);
+	            if (string.IsNullOrWhiteSpace(modelDir))
+	            {
+	                return false;
+	            }
+
+	            var basePath = ResolveBaseTrsklPath(modelDir, category!, localSkel: null);
+	            if (string.IsNullOrWhiteSpace(basePath) || !provider.Exists(basePath))
+	            {
+	                if (MessageHandler.Instance.DebugLogsEnabled)
+	                {
+	                    MessageHandler.Instance.AddMessage(
+	                        MessageType.LOG,
                         $"[TRSKL] no local skeleton; base-only not found category={category} trmdl='{trmdlPath}'");
                 }
                 return false;
@@ -319,6 +491,78 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             uvOverridesBySubmesh[submeshIndex] = (layerMaskOverride, aoOverride);
+        }
+
+        public bool TrySetAssetOverrideBytes(string path, byte[] bytes)
+        {
+            if (assetProvider is Trinity.Core.Assets.InMemoryOverrideAssetProvider overlay)
+            {
+                overlay.SetOverride(path, bytes);
+                return true;
+            }
+
+            return false;
+        }
+
+        public void ReloadMeshesFromSource()
+        {
+            // Clear mesh-derived data.
+            Positions.Clear();
+            Normals.Clear();
+            UVs.Clear();
+            UVs2.Clear();
+            HasUv1.Clear();
+            Colors.Clear();
+            Tangents.Clear();
+            Binormals.Clear();
+            BlendIndicies.Clear();
+            BlendIndiciesOriginal.Clear();
+            BlendWeights.Clear();
+            BlendBoneWeights.Clear();
+            BlendMeshNames.Clear();
+
+            Indices.Clear();
+            HasVertexColors.Clear();
+            HasTangents.Clear();
+            HasBinormals.Clear();
+            HasSkinning.Clear();
+
+            MaterialNames.Clear();
+            SubmeshNames.Clear();
+            SubmeshParentNodeNames.Clear();
+            rigidParentBoneIndexBySubmesh = null;
+            uvOverridesBySubmesh.Clear();
+            selectedSubmeshIndex = -1;
+
+            // Reset GPU setup so the renderer can re-upload buffers.
+            gpuSetupComplete = false;
+            gpuSetupIndex = -1;
+            VAOs = null!;
+            VBOs = null!;
+            EBOs = null!;
+
+            foreach (var meshFile in loadedMeshFiles)
+            {
+                ParseMesh(meshFile);
+            }
+
+            ResolveRigidParentAttachments();
+        }
+
+        public void ApplyTrsklFile(string trsklPath, TRSKL trskl)
+        {
+            if (string.IsNullOrWhiteSpace(trsklPath)) throw new ArgumentException("Missing TRSKL path.", nameof(trsklPath));
+            if (trskl == null) throw new ArgumentNullException(nameof(trskl));
+
+            var bytes = FlatBufferConverter.SerializeFrom(trskl);
+            if (!TrySetAssetOverrideBytes(trsklPath, bytes))
+            {
+                throw new InvalidOperationException("Model does not support in-memory asset overrides (expected InMemoryOverrideAssetProvider).");
+            }
+
+            ParseArmature(trsklPath);
+            ResolveRigidParentAttachments();
+            MarkTrsklDirty(trsklPath);
         }
 	    }
 }

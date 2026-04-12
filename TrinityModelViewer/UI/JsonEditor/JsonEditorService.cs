@@ -141,37 +141,30 @@ namespace TrinityModelViewer.UI.JsonEditor
             }
         }
 
-        public string BuildFlatbufferJson(string kind, byte[] bytes)
-        {
-            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+	        public string BuildFlatbufferJson(string kind, byte[] bytes)
+	        {
+	            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
 
-            return kind switch
-            {
-                "TRMDL" => Trinity.Core.Flatbuffers.Reflections.FlatbufferReflectionJsonDumper.Dump(
-                    bytes,
-                    Trinity.Core.Flatbuffers.Reflections.PokeDocsBfbsRegistry.GetModelSchema(
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsGame.SV,
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsModelSchema.Trmdl)),
-                "TRMSH" => Trinity.Core.Flatbuffers.Reflections.FlatbufferReflectionJsonDumper.Dump(
-                    bytes,
-                    Trinity.Core.Flatbuffers.Reflections.PokeDocsBfbsRegistry.GetModelSchema(
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsGame.SV,
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsModelSchema.Trmsh)),
-                "TRMBF" => Trinity.Core.Flatbuffers.Reflections.FlatbufferReflectionJsonDumper.Dump(
-                    bytes,
-                    Trinity.Core.Flatbuffers.Reflections.PokeDocsBfbsRegistry.GetModelSchema(
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsGame.SV,
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsModelSchema.Trmbf)),
-                "TRSKL" => Trinity.Core.Flatbuffers.Reflections.FlatbufferReflectionJsonDumper.Dump(
-                    bytes,
-                    Trinity.Core.Flatbuffers.Reflections.PokeDocsBfbsRegistry.GetModelSchema(
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsGame.SV,
-                        Trinity.Core.Flatbuffers.Reflections.PokeDocsModelSchema.Trskl)),
-                "TRMTR" => System.Text.Json.JsonSerializer.Serialize(
-                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TrmtrFile>(bytes), opts),
-                "TRMMT" => BuildTrmmtJson(bytes, opts),
-                _ => throw new NotSupportedException($"Unsupported kind: {kind}")
-            };
+	            return kind switch
+	            {
+                "TRMDL" => System.Text.Json.JsonSerializer.Serialize(
+                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TRMDL>(bytes),
+                    opts),
+                "TRMSH" => System.Text.Json.JsonSerializer.Serialize(
+                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TRMSH>(bytes),
+                    opts),
+                "TRMBF" => System.Text.Json.JsonSerializer.Serialize(
+                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TRMBF>(bytes),
+                    opts),
+                "TRSKL" => System.Text.Json.JsonSerializer.Serialize(
+                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TRSKL>(bytes),
+                    opts),
+	                "TRMTR" => TrmtrFileJson.Serialize(
+	                    FlatBufferConverter.DeserializeFrom<Trinity.Core.Flatbuffers.TR.Model.TrmtrFile>(bytes),
+	                    prettySamplers: false),
+	                "TRMMT" => BuildTrmmtJson(bytes, opts),
+	                _ => throw new NotSupportedException($"Unsupported kind: {kind}")
+	            };
 
             static string BuildTrmmtJson(byte[] bytes2, System.Text.Json.JsonSerializerOptions opts2)
             {

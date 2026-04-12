@@ -28,6 +28,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             ResolveRigidParentAttachments();
         }
 
+        public Armature? GetEffectiveArmatureForOverride()
+        {
+            return GetEffectiveArmature();
+        }
+
         private Armature? GetEffectiveArmature()
         {
             return armatureOverride ?? armature;
@@ -143,6 +148,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             modelMat = matrix;
         }
 
+        public Matrix4 GetModelMatrix()
+        {
+            return modelMat;
+        }
+
         public bool IsSubmeshVisible(int submeshIndex)
         {
             if (submeshIndex < 0)
@@ -181,6 +191,24 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             if (!visible && selectedSubmeshIndex == submeshIndex)
             {
                 selectedSubmeshIndex = -1;
+            }
+        }
+
+        public void SetVisibleForMeshShapeName(string meshShapeName, bool visible)
+        {
+            if (string.IsNullOrWhiteSpace(meshShapeName))
+            {
+                return;
+            }
+
+            int count = Positions.Count;
+            for (int i = 0; i < count; i++)
+            {
+                if (i < BlendMeshNames.Count &&
+                    string.Equals(BlendMeshNames[i], meshShapeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SetSubmeshVisible(i, visible);
+                }
             }
         }
 

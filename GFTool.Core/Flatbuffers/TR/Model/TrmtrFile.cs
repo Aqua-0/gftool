@@ -3,7 +3,7 @@ using Trinity.Core.Flatbuffers.Utils;
 
 namespace Trinity.Core.Flatbuffers.TR.Model
 {
-    // PokeDocs-based TRMTR schema (Titan/Ikkaku).
+    // TRMTR schema used by SV/ZA.
     // This file models the on-disk TRMTR structure. The renderer still consumes `TRMaterial`
     // as its runtime representation.
 
@@ -48,6 +48,20 @@ namespace Trinity.Core.Flatbuffers.TR.Model
     }
 
     [FlatBufferTable]
+    public class TrmtrFileVector2fParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public Vector2f Value { get; set; } = new Vector2f();
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileVector3fParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public Vector3f Value { get; set; } = new Vector3f();
+    }
+
+    [FlatBufferTable]
     public class TrmtrFileFloatParameter
     {
         [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
@@ -62,6 +76,22 @@ namespace Trinity.Core.Flatbuffers.TR.Model
     }
 
     [FlatBufferTable]
+    public class TrmtrFileMatrix4x4f
+    {
+        [FlatBufferItem(0)] public Vector4f Row0 { get; set; } = new Vector4f();
+        [FlatBufferItem(1)] public Vector4f Row1 { get; set; } = new Vector4f();
+        [FlatBufferItem(2)] public Vector4f Row2 { get; set; } = new Vector4f();
+        [FlatBufferItem(3)] public Vector4f Row3 { get; set; } = new Vector4f();
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileMatrix4x4fParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public TrmtrFileMatrix4x4f Value { get; set; } = new TrmtrFileMatrix4x4f();
+    }
+
+    [FlatBufferTable]
     public class TrmtrFileIntParameter
     {
         [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
@@ -69,16 +99,81 @@ namespace Trinity.Core.Flatbuffers.TR.Model
     }
 
     [FlatBufferTable]
-    public class TrmtrFileByteExtra
+    public class TrmtrFileVector2i
     {
-        [FlatBufferItem(0, DefaultValue = (sbyte)-1)] public sbyte Value { get; set; } = -1;
+        [FlatBufferItem(0)] public int X { get; set; }
+        [FlatBufferItem(1)] public int Y { get; set; }
     }
 
     [FlatBufferTable]
-    public class TrmtrFileIntExtra
+    public class TrmtrFileVector3i
     {
-        [FlatBufferItem(0)] public uint Field0 { get; set; }
-        [FlatBufferItem(1, DefaultValue = -1)] public int Value { get; set; } = -1;
+        [FlatBufferItem(0)] public int X { get; set; }
+        [FlatBufferItem(1)] public int Y { get; set; }
+        [FlatBufferItem(2)] public int Z { get; set; }
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileVector4i
+    {
+        [FlatBufferItem(0)] public int X { get; set; }
+        [FlatBufferItem(1)] public int Y { get; set; }
+        [FlatBufferItem(2)] public int Z { get; set; }
+        [FlatBufferItem(3)] public int W { get; set; }
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileVector2iParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public TrmtrFileVector2i Value { get; set; } = new TrmtrFileVector2i();
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileVector3iParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public TrmtrFileVector3i Value { get; set; } = new TrmtrFileVector3i();
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileVector4iParameter
+    {
+        [FlatBufferItem(0)] public string Name { get; set; } = string.Empty;
+        [FlatBufferItem(1)] public TrmtrFileVector4i Value { get; set; } = new TrmtrFileVector4i();
+    }
+
+    [FlatBufferEnum(typeof(uint))]
+    public enum TrmtrFrontFace : uint
+    {
+        CW = 0,
+        CCW = 1
+    }
+
+    [FlatBufferEnum(typeof(uint))]
+    public enum TrmtrCullMode : uint
+    {
+        None = 0,
+        Front = 1,
+        Back = 2,
+        FrontAndBack = 3
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileRasterizationState
+    {
+        [FlatBufferItem(0)] public TrmtrFrontFace FrontFace { get; set; } = TrmtrFrontFace.CW;
+        [FlatBufferItem(1)] public TrmtrCullMode CullMode { get; set; } = TrmtrCullMode.Back;
+        [FlatBufferItem(2)] public int DepthBias { get; set; } = 0;
+        [FlatBufferItem(3)] public float SlopeScaledDepthBias { get; set; } = 0.0f;
+        [FlatBufferItem(4)] public float DepthBiasClamp { get; set; } = 0.0f;
+    }
+
+    [FlatBufferTable]
+    public class TrmtrFileDepthState
+    {
+        [FlatBufferItem(0)] public bool DepthWriteEnable { get; set; } = true;
+        [FlatBufferItem(1)] public bool DepthTestEnable { get; set; } = true;
     }
 
     [FlatBufferTable]
@@ -89,17 +184,19 @@ namespace Trinity.Core.Flatbuffers.TR.Model
         [FlatBufferItem(2)] public TrmtrFileTexture[] Textures { get; set; } = Array.Empty<TrmtrFileTexture>();
         [FlatBufferItem(3)] public TrmtrFileSamplerState[] Samplers { get; set; } = Array.Empty<TrmtrFileSamplerState>();
         [FlatBufferItem(4)] public TrmtrFileFloatParameter[] FloatParameters { get; set; } = Array.Empty<TrmtrFileFloatParameter>();
-        [FlatBufferItem(5)] public string Unknown5 { get; set; } = string.Empty;
-        [FlatBufferItem(6)] public TrmtrFileFloat4Parameter[] Float4LightParameters { get; set; } = Array.Empty<TrmtrFileFloat4Parameter>();
+        [FlatBufferItem(5)] public TrmtrFileVector2fParameter[] Vector2fParameters { get; set; } = Array.Empty<TrmtrFileVector2fParameter>();
+        [FlatBufferItem(6)] public TrmtrFileVector3fParameter[] Vector3fParameters { get; set; } = Array.Empty<TrmtrFileVector3fParameter>();
         [FlatBufferItem(7)] public TrmtrFileFloat4Parameter[] Float4Parameters { get; set; } = Array.Empty<TrmtrFileFloat4Parameter>();
-        [FlatBufferItem(8)] public string Unknown8 { get; set; } = string.Empty;
+        [FlatBufferItem(8)] public TrmtrFileMatrix4x4fParameter[] Matrix4x4fParameters { get; set; } = Array.Empty<TrmtrFileMatrix4x4fParameter>();
         [FlatBufferItem(9)] public TrmtrFileIntParameter[] IntParameters { get; set; } = Array.Empty<TrmtrFileIntParameter>();
-        [FlatBufferItem(10)] public string Unknown10 { get; set; } = string.Empty;
-        [FlatBufferItem(11)] public string Unknown11 { get; set; } = string.Empty;
-        [FlatBufferItem(12)] public string Unknown12 { get; set; } = string.Empty;
-        [FlatBufferItem(13)] public TrmtrFileByteExtra? ByteExtra { get; set; }
-        [FlatBufferItem(14)] public TrmtrFileIntExtra? IntExtra { get; set; }
-        [FlatBufferItem(15)] public string AlphaType { get; set; } = string.Empty;
+        [FlatBufferItem(10)] public TrmtrFileVector2iParameter[] Vector2iParameters { get; set; } = Array.Empty<TrmtrFileVector2iParameter>();
+        [FlatBufferItem(11)] public TrmtrFileVector3iParameter[] Vector3iParameters { get; set; } = Array.Empty<TrmtrFileVector3iParameter>();
+        [FlatBufferItem(12)] public TrmtrFileVector4iParameter[] Vector4iParameters { get; set; } = Array.Empty<TrmtrFileVector4iParameter>();
+        [FlatBufferItem(13)] public TrmtrFileDepthState? DepthState { get; set; }
+        [FlatBufferItem(14)] public TrmtrFileRasterizationState? RasterizationState { get; set; }
+        [FlatBufferItem(15)] public string BlendStatePreset { get; set; } = string.Empty;
+        [FlatBufferItem(16)] public bool CastShadow { get; set; } = true;
+        [FlatBufferItem(17)] public bool ReceiveShadow { get; set; } = true;
     }
 
     [FlatBufferTable]

@@ -46,7 +46,7 @@ namespace TrinityModelViewer
                 return;
             }
 
-            const int maxToLoad = 500;
+            int maxToLoad = Math.Clamp(settings.AutoLoadAnimationsMaxCount, 1, 50000);
             int loaded = 0;
 
             foreach (var animPath in animPaths.Take(maxToLoad))
@@ -127,7 +127,7 @@ namespace TrinityModelViewer
                 return;
             }
 
-            const int maxToLoadTotal = 500;
+            int maxToLoadTotal = Math.Clamp(settings.AutoLoadAnimationsMaxCount, 1, 50000);
             HashSet<string> existing;
             lock (animationLoadGate)
             {

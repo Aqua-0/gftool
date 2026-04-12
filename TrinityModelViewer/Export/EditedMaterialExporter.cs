@@ -12,9 +12,9 @@ namespace TrinityModelViewer.Export
             if (string.IsNullOrWhiteSpace(outputTrmtrPath)) throw new ArgumentException("Missing output TRMTR path.", nameof(outputTrmtrPath));
             if (!File.Exists(sourceTrmtrPath)) throw new FileNotFoundException("Source TRMTR not found.", sourceTrmtrPath);
 
-            // Preserve all game-facing fields by patching the original FlatBuffer in-place.
-            // This avoids lossy reserialization when we haven't modeled every field.
-            TrmtrBinaryPatcher.ExportEditedTrmtrPreserveAllFields(sourceTrmtrPath, model, outputTrmtrPath);
+            // Reserialize from the FlatSharp model so runtime edits beyond uniform overrides (e.g. sampler wrap)
+            // can be exported. This still preserves all fields that are represented in our TrmtrFile schema.
+            TrmtrReserializePatcher.ExportEditedTrmtrByReserialize(sourceTrmtrPath, model, outputTrmtrPath);
         }
     }
 }

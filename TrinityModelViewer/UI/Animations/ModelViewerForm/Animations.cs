@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using GfAnim = Trinity.Core.Flatbuffers.GF.Animation;
+using TrAnim = Trinity.Core.Flatbuffers.TR.Animation;
 using Trinity.Core.Assets;
 using Trinity.Core.Cache;
 using Trinity.Core.Utils;
@@ -42,6 +43,7 @@ namespace TrinityModelViewer
             pauseAnimationButton.Enabled = true;
             stopAnimationButton.Enabled = true;
 
+            EnsureGfpakAnimationImportButton();
             EnsureAnimationsContextMenu();
 
             animationUiTimer.Interval = 16;
@@ -106,7 +108,17 @@ namespace TrinityModelViewer
                         continue;
                     }
 
-                    var animFile = FlatBufferConverter.DeserializeFrom<GfAnim.Animation>(file);
+                    var ext = Path.GetExtension(file);
+                    GfAnim.Animation animFile;
+                    if (string.Equals(ext, ".tranm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var tranm = FlatBufferConverter.DeserializeFrom<TrAnim.TRANM>(file);
+                        animFile = Scene.TranmToGfAnimation.Convert(tranm);
+                    }
+                    else
+                    {
+                        animFile = FlatBufferConverter.DeserializeFrom<GfAnim.Animation>(file);
+                    }
                     var anim = new GFTool.Renderer.Scene.GraphicsObjects.Animation(animFile, Path.GetFileNameWithoutExtension(file), file);
                     animations.Add(anim);
                     var item = new ListViewItem(anim.Name) { Tag = anim };
@@ -546,6 +558,53 @@ namespace TrinityModelViewer
             }
 
             return animationsList.SelectedItems[0].Tag as Animation;
+        }
+
+        private void EnsureGfpakAnimationImportButton()
+        {
+            if (loadGfpakAnimationsButton != null)
+            {
+                return;
+            }
+
+            if (animationsToolbar == null || loadAnimationButton == null)
+            {
+                return;
+            }
+
+            var btn = new Button
+            {
+                Name = "loadGfpakAnimationsButton",
+                Text = "Load GFPAK...",
+                Size = new System.Drawing.Size(110, loadAnimationButton.Height)
+            };
+            btn.UseVisualStyleBackColor = loadAnimationButton.UseVisualStyleBackColor;
+            btn.FlatStyle = loadAnimationButton.FlatStyle;
+            btn.Font = loadAnimationButton.Font;
+            btn.Enabled = true;
+            btn.TabIndex = loadAnimationButton.TabIndex + 1;
+
+            btn.Click += async (s, e) => await LoadAnimationsFromGfpakFromDialogAsync();
+
+            int insertX = loadAnimationButton.Right + 6;
+            int delta = btn.Width + 6;
+            foreach (Control c in animationsToolbar.Controls)
+            {
+                if (c == null || ReferenceEquals(c, loadAnimationButton))
+                {
+                    continue;
+                }
+
+                if (c.Left >= insertX)
+                {
+                    c.Left += delta;
+                }
+            }
+
+            btn.Location = new System.Drawing.Point(insertX, loadAnimationButton.Top);
+            animationsToolbar.Controls.Add(btn);
+            loadGfpakAnimationsButton = btn;
+            ApplyTheme(btn);
         }
 
     }

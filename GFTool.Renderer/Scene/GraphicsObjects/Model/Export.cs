@@ -26,21 +26,22 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             BoneMeta
         }
 
-        public sealed class ExportSubmesh
-        {
-            public required string Name { get; init; }
-            public required string MaterialName { get; init; }
-            public required Vector3[] Positions { get; init; }
-            public required Vector3[] Normals { get; init; }
-            public required Vector2[] UVs { get; init; }
-            public required Vector4[] Colors { get; init; }
-            public required Vector4[] Tangents { get; init; }
-            public required Vector3[] Binormals { get; init; }
-            public required Vector4[] BlendIndices { get; init; }
-            public required Vector4[] BlendWeights { get; init; }
-            public required uint[] Indices { get; init; }
-            public required bool HasVertexColors { get; init; }
-            public required bool HasTangents { get; init; }
+	        public sealed class ExportSubmesh
+	        {
+	            public required string Name { get; init; }
+	            public required string MaterialName { get; init; }
+	            public required Vector3[] Positions { get; init; }
+	            public required Vector3[] Normals { get; init; }
+	            public required Vector2[] UVs { get; init; }
+	            public required Vector4[] Colors { get; init; }
+	            public required Vector4[] Tangents { get; init; }
+	            public required Vector3[] Binormals { get; init; }
+	            public required Vector4[] BlendIndices { get; init; }
+	            public required Vector4[] BlendIndicesRaw { get; init; }
+	            public required Vector4[] BlendWeights { get; init; }
+	            public required uint[] Indices { get; init; }
+	            public required bool HasVertexColors { get; init; }
+	            public required bool HasTangents { get; init; }
             public required bool HasBinormals { get; init; }
             public required bool HasSkinning { get; init; }
         }
@@ -61,21 +62,22 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             {
                 string submeshName = i < SubmeshNames.Count ? SubmeshNames[i] : $"Submesh {i}";
                 string materialName = i < MaterialNames.Count ? MaterialNames[i] : string.Empty;
-                subs.Add(new ExportSubmesh
-                {
-                    Name = submeshName,
-                    MaterialName = materialName,
-                    Positions = Positions[i],
-                    Normals = i < Normals.Count ? Normals[i] : Array.Empty<Vector3>(),
-                    UVs = i < UVs.Count ? UVs[i] : Array.Empty<Vector2>(),
-                    Colors = i < Colors.Count ? Colors[i] : Array.Empty<Vector4>(),
-                    Tangents = i < Tangents.Count ? Tangents[i] : Array.Empty<Vector4>(),
-                    Binormals = i < Binormals.Count ? Binormals[i] : Array.Empty<Vector3>(),
-                    BlendIndices = i < BlendIndicies.Count ? BlendIndicies[i] : Array.Empty<Vector4>(),
-                    BlendWeights = i < BlendWeights.Count ? BlendWeights[i] : Array.Empty<Vector4>(),
-                    Indices = i < Indices.Count ? Indices[i] : Array.Empty<uint>(),
-                    HasVertexColors = i < HasVertexColors.Count && HasVertexColors[i],
-                    HasTangents = i < HasTangents.Count && HasTangents[i],
+	                subs.Add(new ExportSubmesh
+	                {
+	                    Name = submeshName,
+	                    MaterialName = materialName,
+	                    Positions = Positions[i],
+	                    Normals = i < Normals.Count ? Normals[i] : Array.Empty<Vector3>(),
+	                    UVs = i < UVs.Count ? UVs[i] : Array.Empty<Vector2>(),
+	                    Colors = i < Colors.Count ? Colors[i] : Array.Empty<Vector4>(),
+	                    Tangents = i < Tangents.Count ? Tangents[i] : Array.Empty<Vector4>(),
+	                    Binormals = i < Binormals.Count ? Binormals[i] : Array.Empty<Vector3>(),
+	                    BlendIndices = i < BlendIndicies.Count ? BlendIndicies[i] : Array.Empty<Vector4>(),
+	                    BlendIndicesRaw = i < BlendIndiciesOriginal.Count ? BlendIndiciesOriginal[i] : Array.Empty<Vector4>(),
+	                    BlendWeights = i < BlendWeights.Count ? BlendWeights[i] : Array.Empty<Vector4>(),
+	                    Indices = i < Indices.Count ? Indices[i] : Array.Empty<uint>(),
+	                    HasVertexColors = i < HasVertexColors.Count && HasVertexColors[i],
+	                    HasTangents = i < HasTangents.Count && HasTangents[i],
                     HasBinormals = i < HasBinormals.Count && HasBinormals[i],
                     HasSkinning = i < HasSkinning.Count && HasSkinning[i]
                 });

@@ -33,8 +33,18 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             activeShader.SetBoolIfExists("LegacyMode", RenderOptions.LegacyMode);
             activeShader.SetIntIfExists("DebugShaderMode", RenderOptions.ShaderDebugMode);
 
+            activeShader.SetFloatIfExists("CameraNear", RenderOptions.CameraNear);
+            activeShader.SetFloatIfExists("CameraFar", RenderOptions.CameraFar);
+            activeShader.SetVector2IfExists("ScreenSize", new Vector2(Math.Max(1, RenderOptions.RenderTargetWidth), Math.Max(1, RenderOptions.RenderTargetHeight)));
+            activeShader.SetFloatIfExists("EnvMaxLod", RenderOptions.EnvMaxLod);
+            activeShader.SetFloatIfExists("EnvIntensity", RenderOptions.EnvIntensity);
+
             float seconds = (float)(Environment.TickCount64 / 1000.0);
             activeShader.SetVector4IfExists("time_params", new Vector4(seconds, 0.0f, 0.0f, 0.0f));
+
+            activeShader.SetBoolIfExists("EnableTeraEffect", RenderOptions.EnableTeraEffect);
+            activeShader.SetVector3IfExists("TeraColor", RenderOptions.TeraColor);
+            activeShader.SetFloatIfExists("TeraStrength", RenderOptions.TeraStrength);
         }
     }
 }

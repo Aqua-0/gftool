@@ -133,6 +133,51 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             return m;
         }
 
+        private static Matrix4 BuildLocalMatrixWithParentScaleInverse(
+            Vector3 scale,
+            Quaternion rotation,
+            Vector3 translation,
+            Vector3 scalePivot,
+            Vector3 rotatePivot,
+            Vector3 parentScale)
+        {
+            // Maya-style SegmentScaleCompensate / "WithoutScaleInheritance":
+            // matrix = [S] * [R] * [IS] * [T]
+            // where [IS] is parentScaleInverse. Translation should NOT be scaled by [IS].
+            //
+            // In our row-vector convention (v' = v * M), that means inserting the inverse scale
+            // BEFORE the translation multiplication (not after).
+            Matrix4 m = Matrix4.Identity;
+
+            var scaleMatrix = Matrix4.CreateScale(scale);
+            if (scalePivot != Vector3.Zero)
+            {
+                m *= Matrix4.CreateTranslation(-scalePivot) * scaleMatrix * Matrix4.CreateTranslation(scalePivot);
+            }
+            else
+            {
+                m *= scaleMatrix;
+            }
+
+            var rotationMatrix = Matrix4.CreateFromQuaternion(rotation);
+            if (rotatePivot != Vector3.Zero)
+            {
+                m *= Matrix4.CreateTranslation(-rotatePivot) * rotationMatrix * Matrix4.CreateTranslation(rotatePivot);
+            }
+            else
+            {
+                m *= rotationMatrix;
+            }
+
+            m *= Matrix4.CreateScale(
+                parentScale.X != 0f ? 1f / parentScale.X : 1f,
+                parentScale.Y != 0f ? 1f / parentScale.Y : 1f,
+                parentScale.Z != 0f ? 1f / parentScale.Z : 1f);
+
+            m *= Matrix4.CreateTranslation(translation);
+            return m;
+        }
+
         public List<Bone> Bones = new List<Bone>();
         public IReadOnlyList<int> ParentIndices => parentIndices;
         private readonly List<int> parentIndices = new List<int>();

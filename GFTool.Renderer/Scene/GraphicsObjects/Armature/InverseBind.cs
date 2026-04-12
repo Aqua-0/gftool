@@ -95,19 +95,28 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
             else
             {
-                local = bone.RestLocalMatrix;
+                if (bone.UseSegmentScaleCompensate &&
+                    bone.ParentIndex >= 0 &&
+                    bone.ParentIndex < Bones.Count &&
+                    bone.ParentIndex != index)
+                {
+                    var parent = Bones[bone.ParentIndex];
+                    local = BuildLocalMatrixWithParentScaleInverse(
+                        bone.RestScale,
+                        bone.RestRotation,
+                        bone.RestPosition,
+                        bone.ScalePivot,
+                        bone.RotatePivot,
+                        parent.RestScale);
+                }
+                else
+                {
+                    local = bone.RestLocalMatrix;
+                }
             }
 
             if (bone.ParentIndex >= 0 && bone.ParentIndex < Bones.Count && bone.ParentIndex != index)
             {
-                if (bone.UseSegmentScaleCompensate)
-                {
-                    var parent = Bones[bone.ParentIndex];
-                    local *= Matrix4.CreateScale(
-                        parent.RestScale.X != 0f ? 1f / parent.RestScale.X : 1f,
-                        parent.RestScale.Y != 0f ? 1f / parent.RestScale.Y : 1f,
-                        parent.RestScale.Z != 0f ? 1f / parent.RestScale.Z : 1f);
-                }
                 var parentWorld = ComputeBindWorld(bone.ParentIndex, useTrsklInverseBind, world, computed);
                 world[index] = local * parentWorld;
             }

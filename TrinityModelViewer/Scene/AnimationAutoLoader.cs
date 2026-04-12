@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GfAnim = Trinity.Core.Flatbuffers.GF.Animation;
+using TrAnim = Trinity.Core.Flatbuffers.TR.Animation;
 using Trinity.Core.Utils;
 
 namespace TrinityModelViewer.Scene
@@ -161,7 +162,17 @@ namespace TrinityModelViewer.Scene
 
                 try
                 {
-                    var animFile = FlatBufferConverter.DeserializeFrom<GfAnim.Animation>(file);
+                    var ext = Path.GetExtension(file);
+                    GfAnim.Animation animFile;
+                    if (string.Equals(ext, ".tranm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var tranmData = FlatBufferConverter.DeserializeFrom<TrAnim.TRANM>(file);
+                        animFile = TranmToGfAnimation.Convert(tranmData);
+                    }
+                    else
+                    {
+                        animFile = FlatBufferConverter.DeserializeFrom<GfAnim.Animation>(file);
+                    }
                     var anim = new Animation(animFile, Path.GetFileNameWithoutExtension(file), file);
                     results.Add((file, anim));
                 }

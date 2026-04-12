@@ -15,17 +15,276 @@ using System.Runtime.InteropServices;
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
 {
-	    public partial class Model : RefObject
-	    {
-        private void ParseMaterial(string file)
-        {
-            ParseMaterial(file, preserveMaterialMetadata: false);
-        }
+		    public partial class Model : RefObject
+		    {
+		        private bool hasMaterialSourceEdits;
+		        private readonly List<NewMaterialCloneRequest> newMaterialCloneRequests = new List<NewMaterialCloneRequest>();
 
-	        private void ParseMaterial(string file, bool preserveMaterialMetadata)
+		        public bool HasMaterialSourceEdits => hasMaterialSourceEdits;
+
+		        public enum NewMaterialTrmmtCloneMode
+		        {
+		            None = 0,
+		            Safe = 1,
+		            Unsafe = 2
+		        }
+
+		        public readonly struct NewMaterialCloneRequest
+		        {
+		            public NewMaterialCloneRequest(string templateName, string newName, NewMaterialTrmmtCloneMode trmmtCloneMode)
+		            {
+		                TemplateName = templateName ?? string.Empty;
+		                NewName = newName ?? string.Empty;
+		                TrmmtCloneMode = trmmtCloneMode;
+		            }
+
+		            public string TemplateName { get; }
+		            public string NewName { get; }
+		            public NewMaterialTrmmtCloneMode TrmmtCloneMode { get; }
+		        }
+
+		        public IReadOnlyList<NewMaterialCloneRequest> GetNewMaterialCloneRequestsSnapshot()
+		        {
+		            return newMaterialCloneRequests.ToArray();
+		        }
+
+		        public bool HasNewMaterialCloneRequests => newMaterialCloneRequests.Count > 0;
+
+			        public bool TryAddClonedMaterial(
+			            string templateMaterialName,
+			            string desiredNewMaterialName,
+			            NewMaterialTrmmtCloneMode trmmtCloneMode,
+			            out string createdMaterialName,
+			            out string? error)
+		        {
+		            createdMaterialName = string.Empty;
+		            error = null;
+
+		            if (string.IsNullOrWhiteSpace(templateMaterialName))
+		            {
+		                error = "Template material name is required.";
+		                return false;
+		            }
+
+		            if (string.IsNullOrWhiteSpace(desiredNewMaterialName))
+		            {
+		                error = "New material name is required.";
+		                return false;
+		            }
+
+		            if (materials == null || materials.Length == 0)
+		            {
+		                error = "Model has no loaded materials.";
+		                return false;
+		            }
+
+		            var template = materials.FirstOrDefault(m => m != null && string.Equals(m.Name, templateMaterialName, StringComparison.OrdinalIgnoreCase));
+		            if (template == null)
+		            {
+		                error = $"Template material not found: '{templateMaterialName}'.";
+		                return false;
+		            }
+
+		            string baseName = desiredNewMaterialName.Trim();
+		            if (baseName.Length == 0)
+		            {
+		                error = "New material name is required.";
+		                return false;
+		            }
+
+		            string unique = baseName;
+		            int suffix = 1;
+		            while (materials.Any(m => m != null && string.Equals(m.Name, unique, StringComparison.OrdinalIgnoreCase)) ||
+		                   newMaterialCloneRequests.Any(r => string.Equals(r.NewName, unique, StringComparison.OrdinalIgnoreCase)))
+		            {
+		                unique = $"{baseName}_{suffix}";
+		                suffix++;
+		            }
+
+		            var shaderParams = template.ShaderParameters
+		                .Select(p => new TRStringParameter { Name = p.Name ?? string.Empty, Value = p.Value ?? string.Empty })
+		                .ToArray();
+
+		            var trmat = new TRMaterial
+		            {
+		                Name = unique,
+		                Shader = new[]
+		                {
+		                    new TRMaterialShader
+		                    {
+		                        Name = template.ShaderName,
+		                        Values = shaderParams
+		                    }
+		                },
+		                Textures = template.Textures
+		                    .Select(t => new TRTexture { Name = t.Name ?? string.Empty, File = t.SourceFile ?? string.Empty, Slot = (uint)t.Slot })
+		                    .ToArray(),
+		                Samplers = template.Samplers
+		                    .Select(s => new TRSampler
+		                    {
+		                        State0 = s.State0,
+		                        State1 = s.State1,
+		                        State2 = s.State2,
+		                        State3 = s.State3,
+		                        State4 = s.State4,
+		                        State5 = s.State5,
+		                        State6 = s.State6,
+		                        State7 = s.State7,
+		                        State8 = s.State8,
+		                        RepeatU = s.RepeatU,
+		                        RepeatV = s.RepeatV,
+		                        RepeatW = s.RepeatW,
+		                        BorderColor = s.BorderColor
+		                    })
+		                    .ToArray(),
+		                FloatParams = template.FloatParameters
+		                    .Select(p => new TRFloatParameter { Name = p.Name ?? string.Empty, Value = p.Value })
+		                    .ToArray(),
+		                Vec2fParams = template.Vec2Parameters
+		                    .Select(p => new TRVec2fParameter { Name = p.Name ?? string.Empty, Value = p.Value })
+		                    .ToArray(),
+		                Vec3fParams = template.Vec3Parameters
+		                    .Select(p => new TRVec3fParameter { Name = p.Name ?? string.Empty, Value = p.Value })
+		                    .ToArray(),
+		                Vec4fParams = template.Vec4Parameters
+		                    .Select(p => new TRVec4fParameter { Name = p.Name ?? string.Empty, Value = p.Value })
+		                    .ToArray()
+		            };
+
+		            TrmtrFileRasterizationState? rast = null;
+		            if (template.TrmtrCullMode.HasValue || template.TrmtrFrontFace.HasValue)
+		            {
+		                rast = new TrmtrFileRasterizationState
+		                {
+		                    CullMode = template.TrmtrCullMode ?? TrmtrCullMode.Back,
+		                    FrontFace = template.TrmtrFrontFace ?? TrmtrFrontFace.CCW,
+		                    DepthBias = 0,
+		                    SlopeScaledDepthBias = 0.0f,
+		                    DepthBiasClamp = 0.0f
+		                };
+		            }
+
+		            var materialPath = new PathString(currentMaterialFilePath ?? string.Empty);
+		            var clonedRuntime = new Material(materialPath, trmat, assetProvider, rast);
+
+		            var newList = materials.ToList();
+		            newList.Add(clonedRuntime);
+		            materials = newList.ToArray();
+		            BuildMaterialMap();
+
+		            newMaterialCloneRequests.Add(new NewMaterialCloneRequest(template.Name, unique, trmmtCloneMode));
+		            hasMaterialSourceEdits = true;
+			            createdMaterialName = unique;
+			            return true;
+			        }
+
+			        public bool TrySetMaterialTextureSourceFile(string materialName, string textureName, string newSourceFile, out string? error)
+			        {
+			            error = null;
+			            if (string.IsNullOrWhiteSpace(materialName))
+			            {
+			                error = "Material name is required.";
+			                return false;
+			            }
+			            if (string.IsNullOrWhiteSpace(textureName))
+			            {
+			                error = "Texture name is required.";
+			                return false;
+			            }
+			            if (newSourceFile == null)
+			            {
+			                error = "Texture file path is required.";
+			                return false;
+			            }
+
+			            if (materials == null || materials.Length == 0)
+			            {
+			                error = "Model has no loaded materials.";
+			                return false;
+			            }
+
+			            var mat = materials.FirstOrDefault(m => m != null && string.Equals(m.Name, materialName, StringComparison.OrdinalIgnoreCase));
+			            if (mat == null)
+			            {
+			                error = $"Material not found: '{materialName}'.";
+			                return false;
+			            }
+
+			            if (!mat.TrySetTextureSourceFile(textureName, newSourceFile, out error))
+			            {
+			                return false;
+			            }
+
+			            hasMaterialSourceEdits = true;
+			            return true;
+			        }
+
+			        public void ApplyTrmtrFile(string sourceMaterialPath, TrmtrFile trmtr, bool preserveMaterialUniformOverrides = false)
+			        {
+			            if (trmtr == null) throw new ArgumentNullException(nameof(trmtr));
+
+		            currentMaterialFilePath = sourceMaterialPath;
+		            hasMaterialSourceEdits = true;
+		            newMaterialCloneRequests.Clear();
+
+		            if (!preserveMaterialUniformOverrides)
+		            {
+		                // JSON application is intended to replace the underlying material data, so any prior uniform
+		                // overrides would mask the edited values.
+		                string scope = GetMaterialUniformOverrideScopeKey();
+		                materialUniformOverrideStateByMaterialFile.Remove(scope);
+		            }
+
+		            if (materials != null)
+		            {
+		                foreach (var existing in materials)
+		                {
+		                    existing?.Dispose();
+		                }
+		            }
+
+			            var materialPath = new PathString(sourceMaterialPath ?? string.Empty);
+			            var shaderGame = ResolveEffectiveShaderGame(trmtr, assetProvider);
+			            this.shaderGame = shaderGame;
+
+				            if (trmtr.Materials == null || trmtr.Materials.Length == 0)
+				            {
+				                MessageHandler.Instance.AddMessage(
+				                    MessageType.WARNING,
+				                    $"[TRMTR] No materials found; using fallback Unlit material: {sourceMaterialPath}");
+				                this.shaderGame = ShaderGame.Auto;
+				                materials = new[] { CreateFallbackUnlitMaterial(new PathString(sourceMaterialPath ?? string.Empty), assetProvider, "__fallback_unlit") };
+				                BuildMaterialMap();
+				                ApplyMaterialMetadataOverridesToRuntimeMaterials();
+				                ApplyMaterialUniformOverridesToRuntimeMaterials();
+				                return;
+				            }
+
+			            var matlist = new List<Material>();
+				            for (int i = 0; i < trmtr.Materials.Length; i++)
+				            {
+			                var src = trmtr.Materials[i];
+			                var trmat = ConvertTrmtrMaterial(src, shaderGame, legacySamplers: null);
+			                matlist.Add(new Material(materialPath, trmat, assetProvider, src?.RasterizationState, src?.BlendStatePreset));
+			            }
+
+		            materials = matlist.ToArray();
+		            BuildMaterialMap();
+		            ApplyMaterialMetadataOverridesToRuntimeMaterials();
+		            ApplyMaterialUniformOverridesToRuntimeMaterials();
+		        }
+
+	        private void ParseMaterial(string file)
 	        {
-	            currentMaterialFilePath = file;
-	            currentMaterialSetName = null;
+	            ParseMaterial(file, preserveMaterialMetadata: false);
+	        }
+
+		        private void ParseMaterial(string file, bool preserveMaterialMetadata)
+		        {
+		            hasMaterialSourceEdits = false;
+		            currentMaterialFilePath = file;
+		            currentMaterialSetName = null;
+		            newMaterialCloneRequests.Clear();
 
 		            if (!preserveMaterialMetadata)
 		            {
@@ -45,47 +304,155 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
             }
 
-		            List<Material> matlist = new List<Material>();
+			            List<Material> matlist = new List<Material>();
 		            var materialPath = new PathString(file);
 		            var trmtrBytes = assetProvider.ReadAllBytes(file);
-		            var trmtr = FlatBufferConverter.DeserializeFrom<TrmtrFile>(trmtrBytes);
-		            TRMTR? legacyTrmtr = null;
-		            try
-		            {
-		                legacyTrmtr = FlatBufferConverter.DeserializeFrom<TRMTR>(trmtrBytes);
+			            TRMTR? legacyTrmtr = null;
+			            try
+			            {
+			                legacyTrmtr = FlatBufferConverter.DeserializeFrom<TRMTR>(trmtrBytes);
 		            }
 		            catch
 		            {
-		                legacyTrmtr = null;
-		            }
-		            var legacySamplersByMaterialName = legacyTrmtr?.Materials?
-		                .Where(m => m != null && !string.IsNullOrWhiteSpace(m.Name))
-		                .ToDictionary(m => m.Name, m => m.Samplers ?? Array.Empty<TRSampler>(), StringComparer.OrdinalIgnoreCase)
-		                ?? new Dictionary<string, TRSampler[]>(StringComparer.OrdinalIgnoreCase);
-		            var shaderGame = ResolveEffectiveShaderGame(trmtr, assetProvider);
-		            this.shaderGame = shaderGame;
-
-		            if (trmtr?.Materials == null || trmtr.Materials.Length == 0)
+			                legacyTrmtr = null;
+			            }
+		            TrmtrFile? trmtr = null;
+		            try
 		            {
-		                throw new InvalidOperationException($"TRMTR has no materials: {file}");
+		                trmtr = FlatBufferConverter.DeserializeFrom<TrmtrFile>(trmtrBytes);
 		            }
-
-		            for (int i = 0; i < trmtr.Materials.Length; i++)
+		            catch (Exception ex)
 		            {
-		                var src = trmtr.Materials[i];
-		                legacySamplersByMaterialName.TryGetValue(src?.Name ?? string.Empty, out var legacySamplers);
-		                if ((legacySamplers == null || legacySamplers.Length == 0) && legacyTrmtr?.Materials != null && i < legacyTrmtr.Materials.Length)
+		                trmtr = null;
+		                if (MessageHandler.Instance.DebugLogsEnabled)
 		                {
-		                    legacySamplers = legacyTrmtr.Materials[i]?.Samplers;
+		                    MessageHandler.Instance.AddMessage(
+		                        MessageType.WARNING,
+		                        $"[TRMTR] Failed to deserialize TrmtrFile; falling back to legacy TRMTR: '{file}' ({ex.GetType().Name})");
 		                }
-		                var trmat = ConvertTrmtrMaterial(src, shaderGame, legacySamplers);
-		                matlist.Add(new Material(materialPath, trmat, assetProvider));
 		            }
-			            materials = matlist.ToArray();
-			            BuildMaterialMap();
-			            ApplyMaterialMetadataOverridesToRuntimeMaterials();
-			            ApplyMaterialUniformOverridesToRuntimeMaterials();
-			        }
+
+		            static bool IsLikelyValid(TrmtrFile candidate)
+		            {
+		                if (candidate.Materials == null || candidate.Materials.Length == 0)
+		                {
+		                    return false;
+		                }
+
+		                for (int i = 0; i < candidate.Materials.Length; i++)
+		                {
+		                    var mat = candidate.Materials[i];
+		                    if (mat == null || string.IsNullOrWhiteSpace(mat.Name))
+		                    {
+		                        return false;
+		                    }
+
+		                    var shaders = mat.Shaders;
+		                    if (shaders == null || shaders.Length == 0 || shaders[0] == null || string.IsNullOrWhiteSpace(shaders[0].Name))
+		                    {
+		                        return false;
+		                    }
+
+		                    var textures = mat.Textures;
+		                    if (textures == null || textures.Length == 0)
+		                    {
+		                        return false;
+		                    }
+		                }
+
+		                return true;
+		            }
+
+		            if (trmtr != null && !IsLikelyValid(trmtr))
+		            {
+		                trmtr = null;
+		                if (MessageHandler.Instance.DebugLogsEnabled)
+		                {
+		                    MessageHandler.Instance.AddMessage(
+		                        MessageType.WARNING,
+		                        $"[TRMTR] TrmtrFile failed validation; falling back to legacy TRMTR: '{file}'");
+		                }
+		            }
+			            var legacySamplersByMaterialName = legacyTrmtr?.Materials?
+			                .Where(m => m != null && !string.IsNullOrWhiteSpace(m.Name))
+			                .ToDictionary(m => m.Name, m => m.Samplers ?? Array.Empty<TRSampler>(), StringComparer.OrdinalIgnoreCase)
+			                ?? new Dictionary<string, TRSampler[]>(StringComparer.OrdinalIgnoreCase);
+				            if (trmtr?.Materials == null || trmtr.Materials.Length == 0)
+				            {
+				                if (legacyTrmtr?.Materials == null || legacyTrmtr.Materials.Length == 0)
+				                {
+				                    MessageHandler.Instance.AddMessage(
+				                        MessageType.WARNING,
+				                        $"[TRMTR] No materials found (new+legacy); using fallback Unlit material: {file}");
+				                    this.shaderGame = ShaderGame.Auto;
+				                    matlist.Add(CreateFallbackUnlitMaterial(materialPath, assetProvider, "__fallback_unlit"));
+				                    materials = matlist.ToArray();
+				                    BuildMaterialMap();
+				                    ApplyMaterialMetadataOverridesToRuntimeMaterials();
+				                    ApplyMaterialUniformOverridesToRuntimeMaterials();
+				                    return;
+				                }
+
+				                this.shaderGame = ShaderGame.SCVI;
+				                for (int i = 0; i < legacyTrmtr.Materials.Length; i++)
+				                {
+			                    var src = legacyTrmtr.Materials[i];
+			                    if (src == null)
+			                    {
+			                        continue;
+			                    }
+			                    matlist.Add(new Material(materialPath, src, assetProvider));
+			                }
+			            }
+			            else
+			            {
+			                var shaderGame = ResolveEffectiveShaderGame(trmtr, assetProvider);
+			                this.shaderGame = shaderGame;
+
+			                for (int i = 0; i < trmtr.Materials.Length; i++)
+			                {
+			                    var src = trmtr.Materials[i];
+			                    legacySamplersByMaterialName.TryGetValue(src?.Name ?? string.Empty, out var legacySamplers);
+			                    if ((legacySamplers == null || legacySamplers.Length == 0) && legacyTrmtr?.Materials != null && i < legacyTrmtr.Materials.Length)
+			                    {
+			                        legacySamplers = legacyTrmtr.Materials[i]?.Samplers;
+			                    }
+			                    var trmat = ConvertTrmtrMaterial(src, shaderGame, legacySamplers);
+			                    matlist.Add(new Material(materialPath, trmat, assetProvider, src?.RasterizationState, src?.BlendStatePreset));
+			                }
+			            }
+					            materials = matlist.ToArray();
+					            BuildMaterialMap();
+					            ApplyMaterialMetadataOverridesToRuntimeMaterials();
+					            ApplyMaterialUniformOverridesToRuntimeMaterials();
+				        }
+
+		        private static Material CreateFallbackUnlitMaterial(PathString materialPath, IAssetProvider assetProvider, string name)
+		        {
+		            var trmat = new TRMaterial
+		            {
+		                Name = name,
+		                Shader = new[]
+		                {
+		                    new TRMaterialShader
+		                    {
+		                        Name = "Unlit",
+		                        Values = new[]
+		                        {
+		                            new TRStringParameter { Name = "__TechniqueName", Value = "Standard" }
+		                        }
+		                    }
+		                },
+		                Textures = Array.Empty<TRTexture>(),
+		                Samplers = Array.Empty<TRSampler>(),
+		                FloatParams = Array.Empty<TRFloatParameter>(),
+		                Vec2fParams = Array.Empty<TRVec2fParameter>(),
+		                Vec3fParams = Array.Empty<TRVec3fParameter>(),
+		                Vec4fParams = Array.Empty<TRVec4fParameter>()
+		            };
+
+		            return new Material(materialPath, trmat, assetProvider);
+		        }
 
 	        private static TRMaterial ConvertTrmtrMaterial(TrmtrFileMaterial src, ShaderGame game, TRSampler[]? legacySamplers)
 	        {
@@ -240,13 +607,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                return sampler;
 	            }
 
-	            var floatParams = src?.FloatParameters?.Select(p => new TRFloatParameter
-	            {
-	                Name = p?.Name ?? string.Empty,
-	                Value = p?.Value ?? 0.0f
-	            }).ToArray() ?? Array.Empty<TRFloatParameter>();
+		            var floatParams = src?.FloatParameters?.Select(p => new TRFloatParameter
+		            {
+		                Name = p?.Name ?? string.Empty,
+		                Value = p?.Value ?? 0.0f
+		            }).ToArray() ?? Array.Empty<TRFloatParameter>();
 
-	            static IEnumerable<TRVec4fParameter> ConvertFloat4Params(TrmtrFileFloat4Parameter[]? srcParams)
+		            static IEnumerable<TRVec4fParameter> ConvertFloat4Params(TrmtrFileFloat4Parameter[]? srcParams)
 	            {
 	                if (srcParams == null) yield break;
 	                foreach (var p in srcParams)
@@ -264,28 +631,38 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                        }
 	                    };
 	                }
-	            }
+		            }
 
-	            var vec4 = ConvertFloat4Params(src?.Float4Parameters);
-	            var vec4Light = ConvertFloat4Params(src?.Float4LightParameters);
-	            var vec4Params = vec4.Concat(vec4Light)
-	                .GroupBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-	                .Select(g => g.First())
-	                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-	                .ToArray();
+		            var vec4Params = ConvertFloat4Params(src?.Float4Parameters)
+		                .GroupBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+		                .Select(g => g.First())
+		                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+		                .ToArray();
 
-	            return new TRMaterial
-	            {
-	                Name = src?.Name ?? "Material",
-	                Shader = new[] { new TRMaterialShader { Name = shaderName, Values = shaderParams.ToArray() } },
-	                Textures = textures,
-	                Samplers = samplers,
-	                FloatParams = floatParams,
-	                Vec2fParams = Array.Empty<TRVec2fParameter>(),
-	                Vec3fParams = Array.Empty<TRVec3fParameter>(),
-	                Vec4fParams = vec4Params,
-	            };
-	        }
+		            var vec2Params = src?.Vector2fParameters?.Select(p => new TRVec2fParameter
+		            {
+		                Name = p?.Name ?? string.Empty,
+		                Value = p?.Value ?? new Trinity.Core.Flatbuffers.Utils.Vector2f()
+		            }).ToArray() ?? Array.Empty<TRVec2fParameter>();
+
+		            var vec3Params = src?.Vector3fParameters?.Select(p => new TRVec3fParameter
+		            {
+		                Name = p?.Name ?? string.Empty,
+		                Value = p?.Value ?? new Trinity.Core.Flatbuffers.Utils.Vector3f()
+		            }).ToArray() ?? Array.Empty<TRVec3fParameter>();
+
+		            return new TRMaterial
+		            {
+		                Name = src?.Name ?? "Material",
+		                Shader = new[] { new TRMaterialShader { Name = shaderName, Values = shaderParams.ToArray() } },
+		                Textures = textures,
+		                Samplers = samplers,
+		                FloatParams = floatParams,
+		                Vec2fParams = vec2Params,
+		                Vec3fParams = vec3Params,
+		                Vec4fParams = vec4Params,
+		            };
+		        }
 
         public IReadOnlyList<Material> GetMaterials()
         {

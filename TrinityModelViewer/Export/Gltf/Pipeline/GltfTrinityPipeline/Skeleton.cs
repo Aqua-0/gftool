@@ -5,7 +5,9 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using GFTool.Renderer.Core;
 using OpenTK.Mathematics;
+using Trinity.Core.Flatbuffers.Reflections;
 using Trinity.Core.Flatbuffers.TR.Model;
 using Trinity.Core.Flatbuffers.Utils;
 using Trinity.Core.Utils;
@@ -127,35 +129,249 @@ namespace TrinityModelViewer.Export
             }
         }
 
-        private static Dictionary<string, int> BuildBoneNameToJointInfoIndex(TRSKL? skeleton)
-        {
-            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            if (skeleton?.TransformNodes == null)
-            {
-                return map;
-            }
+	        private static Dictionary<string, int> BuildBoneNameToSkinJointIndex(TRSKL? skeleton, string? skeletonPath)
+	        {
+	            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var node in skeleton.TransformNodes)
-            {
-                if (node == null || string.IsNullOrWhiteSpace(node.Name))
-                {
-                    continue;
-                }
+	            // SV/ZA TRSKL layout: TransformNodes + JointInfos; blend indices map through JointInfoIndex.
+	            if (skeleton?.TransformNodes != null && skeleton.TransformNodes.Length > 0)
+	            {
+	                foreach (var node in skeleton.TransformNodes)
+	                {
+	                    if (node == null || string.IsNullOrWhiteSpace(node.Name))
+	                    {
+	                        continue;
+	                    }
 
-                int jointInfo = node.JointInfoIndex;
-                if (jointInfo < 0)
-                {
-                    continue;
-                }
+	                    int jointInfo = node.JointInfoIndex;
+	                    if (jointInfo < 0)
+	                    {
+	                        continue;
+	                    }
 
-                if (!map.ContainsKey(node.Name))
-                {
-                    map[node.Name] = jointInfo;
-                }
-            }
+	                    if (!map.ContainsKey(node.Name))
+	                    {
+	                        map[node.Name] = jointInfo;
+	                    }
+	                }
 
-            return map;
-        }
+	                if (map.Count > 0)
+	                {
+	                    return map;
+	                }
+	            }
+
+	            // LA TRSKL layout: transform_nodes have rig_idx + a file-level rig_offset.
+	            // The in-game blend indices for LA meshes are rig indices, not JointInfoIndex.
+	            if (!string.IsNullOrWhiteSpace(skeletonPath) && File.Exists(skeletonPath))
+	            {
+	                var la = TryBuildBoneNameToLaRigIndex(skeletonPath);
+	                if (la != null && la.Count > 0)
+	                {
+	                    return la;
+	                }
+	            }
+
+	            return map;
+	        }
+
+	        private static Dictionary<string, int> BuildBoneNameToSkinningPaletteIndex(
+	            string referenceTrmdlPath,
+	            TRMDL referenceTrmdl,
+	            string referenceDir,
+	            string? localSkeletonPath)
+	        {
+	            if (string.IsNullOrWhiteSpace(localSkeletonPath) || !File.Exists(localSkeletonPath))
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            TRSKL? localSkel;
+	            try
+	            {
+	                localSkel = FlatBufferConverter.DeserializeFrom<TRSKL>(localSkeletonPath);
+	            }
+	            catch
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            if (localSkel?.TransformNodes == null || localSkel.TransformNodes.Length == 0 ||
+	                localSkel.JointInfos == null || localSkel.JointInfos.Length == 0)
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            var category = GuessBaseSkeletonCategory(
+	                referenceTrmdlPath,
+	                referenceTrmdl.Meshes != null && referenceTrmdl.Meshes.Length > 0 ? referenceTrmdl.Meshes[0].PathName : null,
+	                referenceTrmdl.Skeleton?.PathName);
+	            if (string.IsNullOrWhiteSpace(category))
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            var localDir = Path.GetDirectoryName(localSkeletonPath);
+	            if (string.IsNullOrWhiteSpace(localDir))
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            var baseSkelPath = ResolveBaseTrsklPath(localDir, category!, localSkel);
+	            if (string.IsNullOrWhiteSpace(baseSkelPath) || !File.Exists(baseSkelPath))
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            TRSKL? baseSkel;
+	            try
+	            {
+	                baseSkel = FlatBufferConverter.DeserializeFrom<TRSKL>(baseSkelPath);
+	            }
+	            catch
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            if (baseSkel?.TransformNodes == null || baseSkel.TransformNodes.Length == 0 ||
+	                baseSkel.JointInfos == null || baseSkel.JointInfos.Length == 0)
+	            {
+	                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	            }
+
+	            return BuildBoneNameToConnectedPaletteIndex(baseSkel, localSkel);
+	        }
+
+	        private static Dictionary<string, int> BuildBoneNameToConnectedPaletteIndex(TRSKL baseSkel, TRSKL localSkel)
+	        {
+	            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+	            int paletteIndex = 0;
+	            for (int i = 0; i < (baseSkel.TransformNodes?.Length ?? 0); i++)
+	            {
+	                var node = baseSkel.TransformNodes![i];
+	                if (node == null || string.IsNullOrWhiteSpace(node.Name))
+	                {
+	                    continue;
+	                }
+
+	                int jointId = node.JointInfoIndex;
+	                if (jointId < 0 || baseSkel.JointInfos == null || jointId >= baseSkel.JointInfos.Length)
+	                {
+	                    continue;
+	                }
+
+	                if (!baseSkel.JointInfos[jointId].InfluenceSkinning)
+	                {
+	                    continue;
+	                }
+
+	                if (!map.ContainsKey(node.Name))
+	                {
+	                    map[node.Name] = paletteIndex;
+	                }
+
+	                paletteIndex++;
+	            }
+
+	            int localStart = localSkel.SkinningPaletteOffset >= 0 ? localSkel.SkinningPaletteOffset : paletteIndex;
+	            int localPaletteIndex = localStart;
+	            for (int i = 0; i < (localSkel.TransformNodes?.Length ?? 0); i++)
+	            {
+	                var node = localSkel.TransformNodes![i];
+	                if (node == null || string.IsNullOrWhiteSpace(node.Name))
+	                {
+	                    continue;
+	                }
+
+	                int jointId = node.JointInfoIndex;
+	                if (jointId < 0 || localSkel.JointInfos == null || jointId >= localSkel.JointInfos.Length)
+	                {
+	                    continue;
+	                }
+
+	                if (!localSkel.JointInfos[jointId].InfluenceSkinning)
+	                {
+	                    continue;
+	                }
+
+	                if (!map.ContainsKey(node.Name))
+	                {
+	                    map[node.Name] = localPaletteIndex;
+	                }
+
+	                localPaletteIndex++;
+	            }
+
+	            return map;
+	        }
+
+	        private static Dictionary<string, int>? TryBuildBoneNameToLaRigIndex(string trsklPath)
+	        {
+	            try
+	            {
+	                var bytes = File.ReadAllBytes(trsklPath);
+	                var ctx = PokeDocsBfbsRegistry.GetModelSchema(PokeDocsGame.LA, PokeDocsModelSchema.Trskl);
+	                var json = FlatbufferReflectionJsonDumper.Dump(bytes, ctx);
+
+	                using var doc = JsonDocument.Parse(json);
+	                var root = doc.RootElement;
+
+	                int rigOffset = 0;
+	                if (root.TryGetProperty("rig_offset", out var ro) && ro.ValueKind == JsonValueKind.Number)
+	                {
+	                    rigOffset = ro.TryGetInt32(out var i32) ? i32 : (int)ro.GetUInt32();
+	                }
+
+	                if (!root.TryGetProperty("transform_nodes", out var nodes) || nodes.ValueKind != JsonValueKind.Array)
+	                {
+	                    return null;
+	                }
+
+	                var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+	                foreach (var node in nodes.EnumerateArray())
+	                {
+	                    if (node.ValueKind != JsonValueKind.Object)
+	                    {
+	                        continue;
+	                    }
+
+	                    if (!node.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
+	                    {
+	                        continue;
+	                    }
+
+	                    string? name = nameEl.GetString();
+	                    if (string.IsNullOrWhiteSpace(name))
+	                    {
+	                        continue;
+	                    }
+
+	                    int rigIdx = -1;
+	                    if (node.TryGetProperty("rig_idx", out var rigEl) && rigEl.ValueKind == JsonValueKind.Number)
+	                    {
+	                        rigIdx = rigEl.TryGetInt32(out var i32) ? i32 : (int)rigEl.GetUInt32();
+	                    }
+
+	                    if (rigIdx < 0)
+	                    {
+	                        continue;
+	                    }
+
+	                    int finalRig = rigIdx + rigOffset;
+	                    if (!map.ContainsKey(name))
+	                    {
+	                        map[name] = finalRig;
+	                    }
+	                }
+
+	                return map;
+	            }
+	            catch
+	            {
+	                return null;
+	            }
+	        }
 
         private static TRSKL? TryLoadMergedReferenceSkeleton(string referenceTrmdlPath, TRMDL referenceTrmdl, string referenceDir, string localSkeletonPath)
         {
@@ -297,6 +513,20 @@ namespace TrinityModelViewer.Export
                 if (File.Exists(full))
                 {
                     return full;
+                }
+            }
+
+            if (RenderOptions.EnableExtractedOutFallback &&
+                !string.IsNullOrWhiteSpace(RenderOptions.ExtractedOutRoot) &&
+                string.Equals(category, "Protag", StringComparison.OrdinalIgnoreCase))
+            {
+                string outRoot = RenderOptions.ExtractedOutRoot.Trim();
+                string game = RenderOptions.ExtractedOutGame?.Trim() ?? "ZA";
+                string charaRoot = string.Equals(game, "SV", StringComparison.OrdinalIgnoreCase) ? "chara" : "ik_chara";
+                var fallbackBase = Path.Combine(outRoot, charaRoot, "model_pc_base", "model", "p0_base.trskl");
+                if (File.Exists(fallbackBase))
+                {
+                    return fallbackBase;
                 }
             }
 

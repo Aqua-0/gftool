@@ -2,6 +2,7 @@ using GFTool.Renderer.Core;
 using GFTool.Renderer.Core.Graphics;
 using GFTool.Renderer.Scene;
 using GFTool.Renderer.Scene.GraphicsObjects;
+using GFTool.Renderer.Scene.GraphicsObjects.Particles;
 using OpenTK;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -19,13 +20,15 @@ namespace GFTool.Renderer
 {
     public partial class RenderContext : IDisposable
     {
+        private long lastParticleTicks;
+
         public void Update()
         {
             if (viewport == null) return;
 
             bool perfEnabled = RenderOptions.EnablePerfHud || RenderOptions.EnablePerfSpikeLog;
             long perfFrameStart = perfEnabled ? Stopwatch.GetTimestamp() : 0;
-            float msUpdateAnimation = 0, msGeometry = 0, msGeometryFinishWait = 0, msLighting = 0, msFinal = 0, msGrid = 0, msSkeleton = 0, msTransparent = 0, msOutline = 0, msPresent = 0;
+            float msUpdateAnimation = 0, msGeometry = 0, msGeometryFinishWait = 0, msLighting = 0, msFinal = 0, msGrid = 0, msSkeleton = 0, msTransparent = 0, msOutline = 0, msParticles = 0, msPresent = 0;
             long allocGeoStart = 0;
             long allocGeoDelta = 0;
             long allocFrameStart = 0;
@@ -73,6 +76,7 @@ namespace GFTool.Renderer
 
             //Bind viewport
             viewport.MakeCurrent();
+            ProcessPendingSceneObjects();
             ProcessAsyncGlWork();
 
             if (perfEnabled)
@@ -88,6 +92,8 @@ namespace GFTool.Renderer
             {
                 UpdateAnimation();
             }
+
+            UpdateParticles();
 
             if (wireframeEnabled)
             {
@@ -111,6 +117,8 @@ namespace GFTool.Renderer
                 Render();
                 return;
             }
+
+            ShadowMapPass();
 
             //Bind GBuf and clear it
             gbuffer.BindFBO();
@@ -190,6 +198,10 @@ namespace GFTool.Renderer
                 long allocMiscEnd = GetAllocatedBytesSafe();
                 lastAllocOutlineBytes = allocAfterTransparent != 0 && allocMiscEnd != 0 ? allocMiscEnd - allocAfterTransparent : 0;
                 lastAllocMiscBytes = allocMiscStart != 0 && allocMiscEnd != 0 ? allocMiscEnd - allocMiscStart : 0;
+
+                t0 = Stopwatch.GetTimestamp();
+                ParticlePass();
+                msParticles = (float)((Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency);
             }
             else
             {
@@ -200,6 +212,7 @@ namespace GFTool.Renderer
                 SkeletonPass();
                 TransparentPass();
                 OutlinePass();
+                ParticlePass();
             }
 
             //Render
@@ -221,7 +234,7 @@ namespace GFTool.Renderer
             if (perfEnabled)
             {
                 float frameMs = (float)((Stopwatch.GetTimestamp() - perfFrameStart) * 1000.0 / Stopwatch.Frequency);
-                lastPerfFrame = new PerfFrameTiming(frameMs, msUpdateAnimation, msGeometry, msGeometryFinishWait, msLighting, msFinal, msGrid, msSkeleton, msTransparent, msOutline, msPresent);
+                lastPerfFrame = new PerfFrameTiming(frameMs, msUpdateAnimation, msGeometry, msGeometryFinishWait, msLighting, msFinal, msGrid, msSkeleton, msTransparent, msOutline + msParticles, msPresent);
                 lastPerfStats = new PerfFrameStats(allocGeoDelta, PerfCounters.GetSnapshot());
 
                 if (allocFrameStart != 0)
@@ -272,6 +285,33 @@ namespace GFTool.Renderer
                             $"geo {msGeometry:0.0}+finish {msGeometryFinishWait:0.0} alloc {allocGeoDelta / 1024.0:0.0}KB frameAlloc {allocFrameDelta / 1024.0:0.0}KB gc {gc0Delta}/{gc1Delta}/{gc2Delta}) " +
                             $"present {msPresent:0.0}ms drawCalls {c.DrawCalls} tris {c.Triangles} mats {c.MaterialUses} texBinds {c.TextureBinds} skinUploads {c.SkinMatrixUploads}");
                     }
+                }
+            }
+        }
+
+        private void UpdateParticles()
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (lastParticleTicks == 0)
+            {
+                lastParticleTicks = now;
+                return;
+            }
+
+            double dt = (now - lastParticleTicks) / (double)Stopwatch.Frequency;
+            lastParticleTicks = now;
+
+            float dtf = (float)Math.Clamp(dt, 0.0, 0.1);
+            if (dtf <= 0)
+            {
+                return;
+            }
+
+            foreach (var c in SceneGraph.Instance.GetRoot().children)
+            {
+                if (c is IParticleUpdatable updatable)
+                {
+                    updatable.Update(dtf);
                 }
             }
         }
@@ -398,6 +438,30 @@ namespace GFTool.Renderer
                 return;
             }
 
+            float morphFrame = 0.0f;
+            bool hasMorph = activeBlendShapeAnimation != null;
+            if (hasMorph)
+            {
+                bool forceLoop = loopAnimationOverride || activeAnimation.LoopType == Animation.PlayType.Looped;
+                morphFrame = activeBlendShapeAnimation!.GetFrame((float)animationTimeSeconds, forceLoop);
+            }
+
+            float visibilityFrame = 0.0f;
+            bool hasVisibility = activeVisibilityAnimation != null;
+            if (hasVisibility)
+            {
+                bool forceLoop = loopAnimationOverride || activeAnimation.LoopType == Animation.PlayType.Looped;
+                visibilityFrame = activeVisibilityAnimation!.GetFrame((float)animationTimeSeconds, forceLoop);
+            }
+
+            float materialFrame = 0.0f;
+            bool hasMaterialAnim = activeMaterialAnimation != null;
+            if (hasMaterialAnim)
+            {
+                bool forceLoop = loopAnimationOverride || activeAnimation.LoopType == Animation.PlayType.Looped;
+                materialFrame = activeMaterialAnimation!.GetFrame((float)animationTimeSeconds, forceLoop);
+            }
+
             bool probeAlloc = RenderOptions.EnablePerfSpikeLog;
             int modelCount = 0;
             long maxAllocBytes = 0;
@@ -409,6 +473,27 @@ namespace GFTool.Renderer
                 modelCount++;
                 long alloc0 = probeAlloc ? GetAllocatedBytesSafe() : 0;
                 model.ApplyAnimation(activeAnimation, frame, activeAnimationFallback);
+                if (hasVisibility)
+                {
+                    activeVisibilityAnimation!.ApplyToModel(model, visibilityFrame);
+                }
+                if (hasMaterialAnim)
+                {
+                    activeMaterialAnimation!.ApplyToModel(model, materialFrame);
+                }
+                if (hasMorph)
+                {
+                    if (model.HasCpuFullMorphTargets)
+                    {
+                        activeBlendShapeAnimation!.ApplyToModel(model, morphFrame, out var morphError);
+                        if (!string.IsNullOrWhiteSpace(morphError) &&
+                            !string.Equals(morphError, lastBlendShapeApplyError, StringComparison.Ordinal))
+                        {
+                            lastBlendShapeApplyError = morphError;
+                            MessageHandler.Instance.AddMessage(MessageType.WARNING, $"[MorphAnim] {morphError}");
+                        }
+                    }
+                }
                 if (probeAlloc && alloc0 != 0)
                 {
                     long alloc1 = GetAllocatedBytesSafe();

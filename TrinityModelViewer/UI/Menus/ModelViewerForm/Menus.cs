@@ -84,6 +84,73 @@ namespace TrinityModelViewer
             }
         }
 
+        private void AddPokemonLoaderMenu()
+        {
+            if (pokemonLoaderToolStripMenuItem != null)
+            {
+                return;
+            }
+
+            pokemonLoaderToolStripMenuItem = new ToolStripMenuItem("Pokemon Loader");
+            pokemonLoaderToolStripMenuItem.Click += async (s, e) => await OpenPokemonLoaderAsync();
+
+            int toolsIndex = toolsToolStripMenuItem != null ? menuStrip1.Items.IndexOf(toolsToolStripMenuItem) : -1;
+            if (toolsIndex >= 0 && toolsIndex < menuStrip1.Items.Count - 1)
+            {
+                menuStrip1.Items.Insert(toolsIndex + 1, pokemonLoaderToolStripMenuItem);
+                return;
+            }
+
+            int fileIndex = menuStrip1.Items.IndexOf(fileToolStripMenuItem);
+            if (fileIndex >= 0 && fileIndex < menuStrip1.Items.Count - 1)
+            {
+                menuStrip1.Items.Insert(fileIndex + 1, pokemonLoaderToolStripMenuItem);
+            }
+            else
+            {
+                menuStrip1.Items.Add(pokemonLoaderToolStripMenuItem);
+            }
+        }
+
+        private async Task OpenPokemonLoaderAsync()
+        {
+            string active = settings.ActiveExtractedGame?.Trim() ?? "ZA";
+            if (!string.Equals(active, "ZA", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(active, "SV", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(
+                    this,
+                    "Pokemon Loader currently supports ZA and SV only.\n\nOpen Settings and set:\n- Active Extracted Game = ZA or SV\n- Extracted Out Root for that game = <your dump root>\n\nThen try again.",
+                    "Pokemon Loader",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            bool isZa = string.Equals(active, "ZA", StringComparison.OrdinalIgnoreCase);
+            string root = isZa ? (settings.ZaExtractedOutRoot?.Trim() ?? string.Empty) : (settings.SvExtractedOutRoot?.Trim() ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                MessageBox.Show(
+                    this,
+                    isZa
+                        ? "ZA Extracted Out Root is not set (or does not exist).\n\nOpen Settings and set ZA Extracted Out Root to your extracted game root folder."
+                        : "SV Extracted Out Root is not set (or does not exist).\n\nOpen Settings and set SV Extracted Out Root to your extracted game root folder.",
+                    "Pokemon Loader",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var dlg = new TrinityModelViewer.UI.Dialogs.PokemonLoaderForm(
+                isZa ? TrinityModelViewer.UI.Dialogs.PokemonLoaderForm.GameKind.ZA : TrinityModelViewer.UI.Dialogs.PokemonLoaderForm.GameKind.SV,
+                root,
+                path => LoadModelFromPathAsync(path));
+            ApplyTheme(dlg);
+            dlg.ShowDialog(this);
+            await Task.CompletedTask;
+        }
+
         private void AddGfpakMenuItems()
         {
             if (openGfpakToolStripMenuItem != null)
@@ -115,6 +182,9 @@ namespace TrinityModelViewer
             exportTrinityToolStripMenuItem = new ToolStripMenuItem("Export Trinity...");
             exportTrinityToolStripMenuItem.Click += (s, e) => ExportTrinityFromSelection();
 
+            exportTrinityReserializeToolStripMenuItem = new ToolStripMenuItem("Export Trinity (Reserialize)...");
+            exportTrinityReserializeToolStripMenuItem.Click += (s, e) => ExportTrinityReserializeFromSelection();
+
             exportTrinityPatchToolStripMenuItem = new ToolStripMenuItem("Export Trinity (Edited Only)...");
             exportTrinityPatchToolStripMenuItem.Click += (s, e) => ExportTrinityPatchFromSelection();
 
@@ -141,12 +211,14 @@ namespace TrinityModelViewer
                 int next = insertIndex + 1;
                 fileToolStripMenuItem.DropDownItems.Insert(next, new ToolStripSeparator());
                 fileToolStripMenuItem.DropDownItems.Insert(next + 1, exportTrinityToolStripMenuItem);
-                fileToolStripMenuItem.DropDownItems.Insert(next + 2, exportTrinityPatchToolStripMenuItem);
+                fileToolStripMenuItem.DropDownItems.Insert(next + 2, exportTrinityReserializeToolStripMenuItem);
+                fileToolStripMenuItem.DropDownItems.Insert(next + 3, exportTrinityPatchToolStripMenuItem);
             }
             else
             {
                 fileToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
                 fileToolStripMenuItem.DropDownItems.Add(exportTrinityToolStripMenuItem);
+                fileToolStripMenuItem.DropDownItems.Add(exportTrinityReserializeToolStripMenuItem);
                 fileToolStripMenuItem.DropDownItems.Add(exportTrinityPatchToolStripMenuItem);
             }
         }
@@ -261,6 +333,81 @@ namespace TrinityModelViewer
 
             viewToolStripMenuItem.DropDownItems.Add(useBackupIkCharacterShaderToolStripMenuItem);
 
+            teraEffectToolStripMenuItem = new ToolStripMenuItem("Tera Effect")
+            {
+                CheckOnClick = true,
+                Checked = settings.EnableTeraEffect
+            };
+
+            teraTypeMenuToolStripMenuItem = new ToolStripMenuItem("Tera Type");
+            var teraTypes = new[]
+            {
+                ("Normal", 0),
+                ("Fighting", 1),
+                ("Flying", 2),
+                ("Poison", 3),
+                ("Ground", 4),
+                ("Rock", 5),
+                ("Bug", 6),
+                ("Ghost", 7),
+                ("Steel", 8),
+                ("Fire", 9),
+                ("Water", 10),
+                ("Grass", 11),
+                ("Electric", 12),
+                ("Psychic", 13),
+                ("Ice", 14),
+                ("Dragon", 15),
+                ("Dark", 16),
+                ("Fairy", 17)
+            };
+
+            void UpdateTeraTypeChecks()
+            {
+                foreach (ToolStripMenuItem item in teraTypeMenuToolStripMenuItem.DropDownItems)
+                {
+                    if (item?.Tag is int idx)
+                    {
+                        item.Checked = idx == settings.TeraTypeIndex;
+                    }
+                }
+            }
+
+            foreach (var (name, index) in teraTypes)
+            {
+                var item = new ToolStripMenuItem(name)
+                {
+                    Tag = index,
+                    CheckOnClick = true,
+                    Checked = settings.TeraTypeIndex == index
+                };
+                item.Click += (s, e) =>
+                {
+                    settings.TeraTypeIndex = index;
+                    settings.Save();
+                    UpdateTeraTypeChecks();
+                    ApplyRenderSettings();
+                    renderCtrl.Invalidate();
+                };
+                teraTypeMenuToolStripMenuItem.DropDownItems.Add(item);
+            }
+
+            teraEffectToolStripMenuItem.CheckedChanged += (s, e) =>
+            {
+                settings.EnableTeraEffect = teraEffectToolStripMenuItem.Checked;
+                settings.Save();
+                teraTypeMenuToolStripMenuItem.Enabled = settings.EnableTeraEffect;
+                ApplyRenderSettings();
+                renderCtrl.Invalidate();
+            };
+
+            teraTypeMenuToolStripMenuItem.Enabled = settings.EnableTeraEffect;
+            UpdateTeraTypeChecks();
+
+            viewToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            viewToolStripMenuItem.DropDownItems.Add(teraEffectToolStripMenuItem);
+            viewToolStripMenuItem.DropDownItems.Add(teraTypeMenuToolStripMenuItem);
+
             perfHudToolStripMenuItem = new ToolStripMenuItem("Performance HUD")
             {
                 CheckOnClick = true,
@@ -362,13 +509,13 @@ namespace TrinityModelViewer
                 return;
             }
 
-            string? modelPath = null;
+            var modelPaths = new List<string>();
             if (settings.AutoLoadFirstGfpakModel)
             {
-                modelPath = FindFirstTrmdlPath(provider);
+                modelPaths = FindTrmdlPaths(provider);
             }
 
-            if (string.IsNullOrWhiteSpace(modelPath))
+            if (modelPaths.Count == 0)
             {
                 using var browser = new GfpakBrowserForm(provider);
                 if (browser.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(browser.SelectedModelPath))
@@ -377,15 +524,24 @@ namespace TrinityModelViewer
                     return;
                 }
 
-                modelPath = browser.SelectedModelPath;
+                modelPaths.Add(browser.SelectedModelPath);
             }
 
             BeginModelLoad();
             try
             {
                 ClearAll();
-                var mdl = await AddModelToSceneAsync(modelPath!, provider);
-                if (mdl != null)
+                int loaded = 0;
+                foreach (var modelPath in modelPaths)
+                {
+                    var mdl = await AddModelToSceneAsync(modelPath, provider);
+                    if (mdl != null)
+                    {
+                        loaded++;
+                    }
+                }
+
+                if (loaded > 0)
                 {
                     TryAutoLoadAnimationsFromGfpak(provider);
                 }
@@ -412,13 +568,14 @@ namespace TrinityModelViewer
             }
         }
 
-        private static string? FindFirstTrmdlPath(IAssetProvider provider)
+        private static List<string> FindTrmdlPaths(IAssetProvider provider)
         {
             return provider.EnumerateEntries()
                 .Select(e => e.Path)
                 .Where(p => !string.IsNullOrWhiteSpace(p) && p.EndsWith(".trmdl", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault();
+                .ToList()!;
         }
 
         private void AddLastModelMenu()

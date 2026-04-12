@@ -100,8 +100,9 @@ namespace TrinityModelViewer.Export
 
                 if (meshIndex == 0)
                 {
+                    var refTrmshBytes = File.ReadAllBytes(refTrmshPath);
                     var refTrmbf = FlatBufferConverter.DeserializeFrom<TRMBF>(refTrmbfPath);
-                    var (outTrmsh, outTrmbf, bounds) = BuildTrinityMeshFilesFromTemplate(gltfPrims, refTrmsh, refTrmbf, outTrmbfRel, materialNames);
+                    var (outTrmsh, outTrmbf, bounds) = BuildTrinityMeshFilesFromTemplate(gltfPrims, refTrmshBytes, refTrmsh, refTrmbf, outTrmbfRel, materialNames);
                     lod0Bounds = bounds;
 
                     var outTrmshPath = Path.Combine(outputDir, outTrmshRel);

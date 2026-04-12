@@ -20,9 +20,17 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         private void ParseArmature(string file)
         {
             var skel = LoadFlat<TRSKL>(file);
-            var merge = assetProvider is DiskAssetProvider or Trinity.Core.Assets.OverlayDiskAssetProvider
-                ? TryLoadAndMergeBaseSkeleton(skel, file, baseSkeletonCategoryHint)
-                : null;
+            MergedSkeletonResult? merge = null;
+            currentSkeletonPath = file;
+            var provider = assetProvider is InMemoryOverrideAssetProvider mem ? mem.Inner : assetProvider;
+            if (provider is DiskAssetProvider or Trinity.Core.Assets.OverlayDiskAssetProvider)
+            {
+                merge = TryLoadAndMergeBaseSkeleton(skel, file, baseSkeletonCategoryHint);
+            }
+            else if (provider is GfpakAssetProvider gfpak)
+            {
+                merge = TryLoadAndMergeBaseSkeletonFromBaseGfpak(gfpak, skel, file, baseSkeletonCategoryHint);
+            }
             armature = merge != null
                 ? new Armature(merge.Value.Skeleton, file, merge.Value.SkinningPalette)
                 : new Armature(skel, file);
@@ -55,7 +63,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             try
             {
 	                var basePath = ResolveBaseTrsklPath(localDir, category, localSkel);
-	                if (string.IsNullOrWhiteSpace(basePath) || !File.Exists(basePath))
+	                if (string.IsNullOrWhiteSpace(basePath) || !assetProvider.Exists(basePath))
 	                {
 	                    return null;
 	                }
@@ -81,6 +89,179 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
                 return null;
             }
+        }
+
+        private MergedSkeletonResult? TryLoadAndMergeBaseSkeletonFromBaseGfpak(GfpakAssetProvider localGfpak, TRSKL localSkel, string localSkelPath, string? category)
+        {
+            if (localGfpak == null || localSkel == null || string.IsNullOrWhiteSpace(localSkelPath) || string.IsNullOrWhiteSpace(category))
+            {
+                return null;
+            }
+
+            // Keep this narrowly scoped: this is specifically for LA-ish player parts packed as per-slot GFPAKs
+            // that rely on a base skeleton pack nearby.
+            if (!string.Equals(category, "Protag", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            string? prefix = GuessProtagPrefix(localSkelPath, localGfpak.ContainerPath);
+            if (string.IsNullOrWhiteSpace(prefix) || (prefix != "p1" && prefix != "p2"))
+            {
+                return null;
+            }
+
+            string baseGfpakPath = ResolveBaseGfpakPath(localGfpak.ContainerPath, prefix);
+            if (string.IsNullOrWhiteSpace(baseGfpakPath) || !File.Exists(baseGfpakPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var baseProvider = new GfpakAssetProvider(baseGfpakPath);
+                var baseSkel = LoadTrsklFromGfpak(baseProvider, prefix);
+                if (baseSkel == null)
+                {
+                    return null;
+                }
+
+                var merged = MergeBaseAndLocalSkeletons(baseSkel, localSkel);
+                int[]? palette = BuildConnectedSkinningPalette(baseSkel, localSkel);
+                if (MessageHandler.Instance.DebugLogsEnabled)
+                {
+                    MessageHandler.Instance.AddMessage(
+                        MessageType.LOG,
+                        $"[TRSKL] baseMerge(GFPAK) prefix={prefix} basePack='{Path.GetFileName(baseGfpakPath)}' localPack='{localGfpak.DisplayName}' localSkel='{localSkelPath}' nodes={baseSkel.TransformNodes.Length}+{localSkel.TransformNodes.Length} joints={baseSkel.JointInfos.Length}+{localSkel.JointInfos.Length}");
+                }
+                return new MergedSkeletonResult { Skeleton = merged, SkinningPalette = palette };
+            }
+            catch (Exception ex)
+            {
+                if (MessageHandler.Instance.DebugLogsEnabled)
+                {
+                    MessageHandler.Instance.AddMessage(
+                        MessageType.WARNING,
+                        $"[TRSKL] baseMerge(GFPAK) failed localPack='{localGfpak.DisplayName}' localSkel='{localSkelPath}': {ex.Message}");
+                }
+                return null;
+            }
+        }
+
+        private static string ResolveBaseGfpakPath(string localGfpakPath, string prefix)
+        {
+            if (string.IsNullOrWhiteSpace(localGfpakPath) || string.IsNullOrWhiteSpace(prefix))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                string? localDir = Path.GetDirectoryName(localGfpakPath);
+                if (string.IsNullOrWhiteSpace(localDir))
+                {
+                    return string.Empty;
+                }
+
+                string? parent = Directory.GetParent(localDir)?.FullName;
+                if (string.IsNullOrWhiteSpace(parent))
+                {
+                    return string.Empty;
+                }
+
+                string baseDir = Path.Combine(parent, "base");
+                string baseFile = $"{prefix}_base0001_00_default.gfpak";
+                return Path.Combine(baseDir, baseFile);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string? GuessProtagPrefix(string localSkeletonPath, string localGfpakPath)
+        {
+            static string? PrefixFromName(string? name)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    return null;
+                }
+
+                if (name.StartsWith("p1", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "p1";
+                }
+
+                if (name.StartsWith("p2", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "p2";
+                }
+
+                return null;
+            }
+
+            var fromSkel = PrefixFromName(Path.GetFileName(localSkeletonPath));
+            if (!string.IsNullOrWhiteSpace(fromSkel))
+            {
+                return fromSkel;
+            }
+
+            return PrefixFromName(Path.GetFileName(localGfpakPath));
+        }
+
+        private TRSKL? LoadTrsklFromGfpak(GfpakAssetProvider provider, string prefix)
+        {
+            if (provider == null)
+            {
+                return null;
+            }
+
+            string targetName = $"{prefix}_base0001_00_default.trskl";
+            string? path = provider.EnumerateEntries()
+                .Select(e => e.Path)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .FirstOrDefault(p =>
+                    string.Equals(Path.GetFileName(p), targetName, StringComparison.OrdinalIgnoreCase) ||
+                    (p.EndsWith(".trskl", StringComparison.OrdinalIgnoreCase) && p.IndexOf("base0001_00_default", StringComparison.OrdinalIgnoreCase) >= 0));
+
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                try
+                {
+                    return FlatBufferConverter.DeserializeFrom<TRSKL>(provider.ReadAllBytes(path));
+                }
+                catch
+                {
+                    // Fall through to raw scanning.
+                }
+            }
+
+            // No names (or name lookup failed). Scan entries and try parsing TRSKL until one works.
+            foreach (var entry in provider.EnumerateEntries())
+            {
+                try
+                {
+                    var bytes = provider.ReadAllBytes(entry.PathHash);
+                    var skel = FlatBufferConverter.DeserializeFrom<TRSKL>(bytes);
+                    if (skel?.TransformNodes != null && skel.TransformNodes.Length > 0)
+                    {
+                        if (MessageHandler.Instance.DebugLogsEnabled)
+                        {
+                            MessageHandler.Instance.AddMessage(
+                                MessageType.LOG,
+                                $"[TRSKL] baseMerge(GFPAK) picked unnamed base skeleton hash=0x{entry.PathHash:X16} pack='{provider.DisplayName}'");
+                        }
+                        return skel;
+                    }
+                }
+                catch
+                {
+                    // Not a TRSKL.
+                }
+            }
+
+            return null;
         }
 
         private static int CountInfluencingNodes(TRSKL skel)
@@ -138,6 +319,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 _ => Array.Empty<string>()
             };
 
+            var provider = assetProvider is InMemoryOverrideAssetProvider mem ? mem.Inner : assetProvider;
+
             // If the local skeleton specifies a skinning palette offset, prefer a base skeleton
             // whose influencing node count matches the expected offset. This helps player clothing
             // models that index into the connected skinning palette (indices can be > joint_info_list length).
@@ -147,9 +330,16 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 foreach (var rel in rels)
                 {
                     var full = Path.GetFullPath(Path.Combine(modelDir, rel));
-                    if (!File.Exists(full))
+                    if (!provider.Exists(full))
                     {
+                        if (TryResolveViaExtractedOut(full, out var mapped) && provider.Exists(mapped))
+                        {
+                            full = mapped;
+                        }
+                        else
+                        {
                         continue;
+                    }
                     }
 
                     try
@@ -172,13 +362,105 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             foreach (var rel in rels)
             {
                 var full = Path.GetFullPath(Path.Combine(modelDir, rel));
-                if (File.Exists(full))
+                if (provider.Exists(full))
                 {
                     return full;
+                }
+
+                if (TryResolveViaExtractedOut(full, out var mapped) && provider.Exists(mapped))
+                {
+                    return mapped;
                 }
             }
 
             return null;
+        }
+
+        private static bool TryResolveViaExtractedOut(string fullPath, out string mappedFullPath)
+        {
+            mappedFullPath = string.Empty;
+            if (!RenderOptions.EnableExtractedOutFallback ||
+                string.IsNullOrWhiteSpace(RenderOptions.ExtractedOutRoot) ||
+                string.IsNullOrWhiteSpace(fullPath))
+            {
+                return false;
+            }
+
+            string outRoot = RenderOptions.ExtractedOutRoot;
+            string game = RenderOptions.ExtractedOutGame ?? "ZA";
+            string domainRoot = GetCharaRootFolder(game);
+
+            string norm = fullPath.Replace('\\', '/');
+
+            // If the request already contains a known game-root folder, keep the tail under it.
+            foreach (var root in new[] { "ik_chara", "ik_pokemon", "chara", "pokemon" })
+            {
+                string token = "/" + root + "/";
+                int idx = norm.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    string tail = norm.Substring(idx + token.Length).TrimStart('/');
+                    mappedFullPath = Path.Combine(outRoot, domainRoot, tail);
+                    return true;
+                }
+            }
+
+            if (TryExtractTailFromKnownTrinityRoot(norm, out var tailFromRoot))
+            {
+                mappedFullPath = Path.Combine(outRoot, domainRoot, tailFromRoot);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string GetCharaRootFolder(string game)
+        {
+            return string.Equals(game?.Trim(), "SV", StringComparison.OrdinalIgnoreCase) ? "chara" : "ik_chara";
+        }
+
+        private static bool TryExtractTailFromKnownTrinityRoot(string normalizedPath, out string tail)
+        {
+            tail = string.Empty;
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return false;
+            }
+
+            string[] roots =
+            {
+                "/model_pc_base/",
+                "/model_pc/",
+                "/model_cc_base/",
+                "/model_cc_",
+                "/motion_pc_base/",
+                "/motion_pc/",
+                "/motion_cc_base/",
+                "/motion_cc_",
+                "/share/",
+                "/ik_effect/",
+                "/ik_message/",
+                "/ik_event/",
+                "/ik_demo/"
+            };
+
+            int best = -1;
+            foreach (var token in roots)
+            {
+                int idx = normalizedPath.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0 && (best < 0 || idx < best))
+                {
+                    best = idx;
+                }
+            }
+
+            if (best < 0)
+            {
+                return false;
+            }
+
+            tail = normalizedPath.Substring(best + 1).TrimStart('/');
+            return !string.IsNullOrWhiteSpace(tail);
         }
 
         private static int[]? BuildConnectedSkinningPalette(TRSKL baseSkel, TRSKL localSkel)

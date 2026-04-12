@@ -7,6 +7,8 @@ using GFTool.Renderer.Scene.GraphicsObjects;
 using OpenTK.Mathematics;
 using System.Drawing;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Trinity.Core.Utils;
 using Point = System.Drawing.Point;
 using GFTool.Renderer.Core;
@@ -16,7 +18,19 @@ namespace TrinitySceneView
 {
     public partial class SceneViewerForm : Form
     {
-        private void TryLoadSceneModels(string sceneFile)
+        private NpcSpawnerDbCache? npcSpawnerDb;
+        private string? selectedSpawnerId;
+
+        private CancellationTokenSource? sceneLoadCts;
+        private bool isSceneLoading;
+        private int sceneLoadVersion;
+
+        private Task TryLoadSceneModelsAsync(string sceneFile)
+        {
+            return TryLoadSceneModelsAsync(sceneFile, CancellationToken.None);
+        }
+
+        private async Task TryLoadSceneModelsAsync(string sceneFile, CancellationToken externalToken)
         {
             if (renderCtrl?.renderer == null)
             {
@@ -29,50 +43,240 @@ namespace TrinitySceneView
                 return;
             }
 
-            renderCtrl.renderer.ClearScene();
-            ClearModelsList();
+            CancelSceneLoad();
+            int loadVersion = Interlocked.Increment(ref sceneLoadVersion);
+            var myCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
+            sceneLoadCts = myCts;
+            var token = myCts.Token;
 
-            TRSCN? trscn;
+            isSceneLoading = true;
+            if (!config.AdditiveLoads)
+            {
+                renderCtrl.renderer.ClearScene();
+                ClearModelsList();
+                loadedSceneModelInstances.Clear();
+            }
+            renderCtrl.Invalidate();
+
+            BeginSceneLoadUi(loadVersion, "Scanning scene...");
+
             try
             {
-                trscn = FlatBufferConverter.DeserializeFrom<TRSCN>(sceneFile);
+                var result = await Task.Run(() => CollectSceneModelSpawns(sceneFile, token), token);
+                npcSpawnerDb = result.NpcDb;
+                var spawns = result.Spawns;
+
+                if (spawns.Count == 0)
+                {
+                    EndSceneLoadUi(loadVersion, "No models found.");
+                    return;
+                }
+
+                var spawnedPositions = new List<Vector3>(spawns.Count);
+                int completed = 0;
+                int total = spawns.Count;
+
+                for (int i = 0; i < spawns.Count; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    var spawn = spawns[i];
+                    var resolved = ResolveModelPath(spawn.ModelPath);
+                    if (resolved == null)
+                    {
+                        completed++;
+                        int percentMissing = ComputeOverallPercent(total, completed, 1.0f);
+                        ReportSceneLoadUi(loadVersion, percentMissing, $"Missing model ({completed}/{total})");
+                        MessageHandler.Instance.AddMessage(
+                            MessageType.WARNING,
+                            $"[Scene] Missing model file: {spawn.ModelPath} (SceneObject={spawn.SceneObjectName ?? "(null)"}, scene={Path.GetFileName(spawn.SceneFile)})");
+                        continue;
+                    }
+
+                    var progress = new Progress<float>(p =>
+                    {
+                        int percent = ComputeOverallPercent(total, completed, p);
+                        ReportSceneLoadUi(loadVersion, percent, $"Loading {completed + 1}/{total}: {Path.GetFileNameWithoutExtension(resolved)}");
+                    });
+
+                    Model model;
+                    try
+                    {
+                        model = await renderCtrl.renderer.AddSceneModelAsync(resolved, token: token, progress: progress);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        completed++;
+                        int percentFailed = ComputeOverallPercent(total, completed, 1.0f);
+                        ReportSceneLoadUi(loadVersion, percentFailed, $"Failed ({completed}/{total})");
+                        MessageHandler.Instance.AddMessage(
+                            MessageType.WARNING,
+                            $"[Scene] Failed to load model '{resolved}' (SceneObject={spawn.SceneObjectName ?? "(null)"}): {ex.GetType().Name}: {ex.Message}");
+                        continue;
+                    }
+
+                    var mat = ApplyViewerMatrixOptions(spawn.ModelMatrix, config.SpawnModelsAtOrigin, config.RotateModels180X, config.RotateModels180Y, out var position, out var scale);
+                    model.SetModelMatrix(mat);
+                    spawnedPositions.Add(position);
+                    AddModelToList(spawn.SceneObjectName, spawn.ModelPath, model);
+                    loadedSceneModelInstances.Add(new LoadedSceneModelInstance
+                    {
+                        Name = string.IsNullOrWhiteSpace(spawn.SceneObjectName)
+                            ? Path.GetFileNameWithoutExtension(spawn.ModelPath)
+                            : spawn.SceneObjectName,
+                        SourcePath = resolved,
+                        Transform = mat,
+                        Model = model
+                    });
+
+                    completed++;
+                    int percentDone = ComputeOverallPercent(total, completed, 1.0f);
+                    ReportSceneLoadUi(loadVersion, percentDone, $"Loaded {completed}/{total}");
+
+                    if (MessageHandler.Instance.DebugLogsEnabled)
+                    {
+                        MessageHandler.Instance.AddMessage(
+                            MessageType.LOG,
+                            $"[Scene] Model '{spawn.SceneObjectName}' -> '{spawn.ModelPath}' pos={position} scale={scale}{(config.SpawnModelsAtOrigin ? " (origin override)" : "")}");
+                    }
+                }
+
+                if (spawnedPositions.Count > 0)
+                {
+                    var min = new Vector3(float.PositiveInfinity);
+                    var max = new Vector3(float.NegativeInfinity);
+                    foreach (var p in spawnedPositions)
+                    {
+                        min = Vector3.ComponentMin(min, p);
+                        max = Vector3.ComponentMax(max, p);
+                    }
+
+                    var center = (min + max) * 0.5f;
+                    var radius = (max - min).Length * 0.5f;
+                    // Start close for small props, but auto-dolly out for large scenes.
+                    var distance = MathF.Max(2.5f, radius * 2.5f);
+                    renderCtrl.renderer.FocusCamera(center, distance);
+                    ApplySceneClipPlanes(center, radius);
+
+                    if (MessageHandler.Instance.DebugLogsEnabled)
+                    {
+                        MessageHandler.Instance.AddMessage(
+                        MessageType.LOG,
+                        $"[Scene] Focus camera at {center} (models={spawnedPositions.Count}, radius≈{radius:0.###}, dist≈{distance:0.###}).");
+	                    }
+	                }
+
+	                EndSceneLoadUi(loadVersion, $"Loaded {completed}/{total} model(s).");
+	            }
+	            catch (OperationCanceledException)
+	            {
+	                EndSceneLoadUi(loadVersion, "Load canceled.");
+	                MessageHandler.Instance.AddMessage(MessageType.LOG, "[Scene] Load canceled.");
             }
             catch (Exception ex)
             {
-                MessageHandler.Instance.AddMessage(MessageType.ERROR, $"[Scene] Failed to parse scene '{sceneFile}': {ex.Message}");
+                EndSceneLoadUi(loadVersion, "Load failed.");
+                MessageHandler.Instance.AddMessage(MessageType.ERROR, $"[Scene] Load failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                if (sceneLoadVersion == loadVersion)
+                {
+                    isSceneLoading = false;
+                    renderCtrl.Invalidate();
+                }
+
+                try { myCts.Dispose(); } catch { }
+                if (ReferenceEquals(sceneLoadCts, myCts))
+                {
+                    sceneLoadCts = null;
+                }
+            }
+        }
+
+        private void CancelSceneLoad()
+        {
+            try
+            {
+                sceneLoadCts?.Cancel();
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void BeginSceneLoadUi(int loadVersion, string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)(() => BeginSceneLoadUi(loadVersion, message)));
                 return;
             }
 
-            var loadedScenes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var spawnedPositions = new List<Vector3>();
-            LoadSceneRecursive(sceneFile, trscn, loadedScenes, spawnedPositions);
-
-            if (spawnedPositions.Count > 0)
+            if (sceneLoadVersion != loadVersion)
             {
-                var min = new Vector3(float.PositiveInfinity);
-                var max = new Vector3(float.NegativeInfinity);
-                foreach (var p in spawnedPositions)
-                {
-                    min = Vector3.ComponentMin(min, p);
-                    max = Vector3.ComponentMax(max, p);
-                }
-
-                var center = (min + max) * 0.5f;
-                var radius = (max - min).Length * 0.5f;
-                // Start close for small props, but auto-dolly out for large scenes.
-                var distance = MathF.Max(2.5f, radius * 2.5f);
-                renderCtrl.renderer.FocusCamera(center, distance);
-                ApplySceneClipPlanes(center, radius);
-
-                if (MessageHandler.Instance.DebugLogsEnabled)
-                {
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.LOG,
-                        $"[Scene] Focus camera at {center} (models={spawnedPositions.Count}, radius≈{radius:0.###}, dist≈{distance:0.###}).");
-                }
+                return;
             }
 
-            renderCtrl.Invalidate();
+            loadingProgressBar.Value = 0;
+            loadingProgressBar.Visible = true;
+            statusLbl.Text = message;
+        }
+
+        private void ReportSceneLoadUi(int loadVersion, int percent, string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)(() => ReportSceneLoadUi(loadVersion, percent, message)));
+                return;
+            }
+
+            if (sceneLoadVersion != loadVersion)
+            {
+                return;
+            }
+
+            loadingProgressBar.Value = Math.Clamp(percent, 0, 100);
+            statusLbl.Text = message;
+        }
+
+        private void EndSceneLoadUi(int loadVersion, string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)(() => EndSceneLoadUi(loadVersion, message)));
+                return;
+            }
+
+            if (sceneLoadVersion != loadVersion)
+            {
+                return;
+            }
+
+            loadingProgressBar.Value = 100;
+            statusLbl.Text = message;
+            loadingProgressBar.Visible = false;
+        }
+
+        private static int ComputeOverallPercent(int total, int completed, float currentModelProgress)
+        {
+            if (total <= 0)
+            {
+                return 0;
+            }
+
+            float scanPortion = 0.05f;
+            float loadPortion = 1.0f - scanPortion;
+
+            float doneModels = Math.Clamp(completed, 0, total);
+            float modelP = Math.Clamp(currentModelProgress, 0f, 1f);
+            float overall = scanPortion + loadPortion * ((doneModels + modelP) / total);
+            return (int)Math.Round(overall * 100.0f);
         }
 
         private void ClearModelsList()
@@ -104,155 +308,6 @@ namespace TrinitySceneView
             // Keep far clip generous for large-world Trinity scenes.
             var far = MathF.Max(10_000.0f, radius * 200.0f);
             renderCtrl.renderer.SetCameraClipPlanes(0.1f, far);
-        }
-
-        private void LoadSceneRecursive(string sceneFile, TRSCN trscn, HashSet<string> loadedScenes, List<Vector3> spawnedPositions)
-        {
-            if (loadedScenes.Contains(sceneFile))
-            {
-                return;
-            }
-            loadedScenes.Add(sceneFile);
-
-            int spawned = 0;
-            if (trscn.Chunks != null)
-            {
-                foreach (var chunk in trscn.Chunks)
-                {
-                    spawned += ProcessChunk(sceneFile, chunk, loadedScenes, spawnedPositions);
-                }
-            }
-
-            if (spawned > 0)
-            {
-                MessageHandler.Instance.AddMessage(MessageType.LOG, $"[Scene] Spawned {spawned} model(s) from '{Path.GetFileName(sceneFile)}'.");
-            }
-        }
-
-        private int ProcessChunk(string sceneFile, SceneChunk chunk, HashSet<string> loadedScenes, List<Vector3> spawnedPositions)
-        {
-            if (chunk == null || string.IsNullOrWhiteSpace(chunk.Type))
-            {
-                return 0;
-            }
-
-            int spawned = 0;
-            if (chunk.Type == nameof(SubScene))
-            {
-                try
-                {
-                    var sub = FlatBufferConverter.DeserializeFrom<SubScene>(chunk.Data);
-                    if (!string.IsNullOrWhiteSpace(sub.Filepath))
-                    {
-                        var resolved = ResolveSceneReference(sceneFile, sub.Filepath);
-                        if (resolved != null)
-                        {
-                            var subScn = FlatBufferConverter.DeserializeFrom<TRSCN>(resolved);
-                            LoadSceneRecursive(resolved, subScn, loadedScenes, spawnedPositions);
-                        }
-                        else
-                        {
-                            MessageHandler.Instance.AddMessage(MessageType.WARNING, $"[Scene] Missing SubScene file: {sub.Filepath} (from {Path.GetFileName(sceneFile)})");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageHandler.Instance.AddMessage(MessageType.WARNING, $"[Scene] Failed to parse SubScene chunk: {ex.Message}");
-                }
-            }
-            else if (chunk.Type == nameof(trinity_SceneObject))
-            {
-                spawned += TrySpawnSceneObject(sceneFile, chunk, spawnedPositions);
-            }
-
-            if (chunk.Children != null)
-            {
-                foreach (var child in chunk.Children)
-                {
-                    spawned += ProcessChunk(sceneFile, child, loadedScenes, spawnedPositions);
-                }
-            }
-
-            return spawned;
-        }
-
-        private int TrySpawnSceneObject(string sceneFile, SceneChunk chunk, List<Vector3> spawnedPositions)
-        {
-            trinity_SceneObject? sceneObject;
-            try
-            {
-                sceneObject = FlatBufferConverter.DeserializeFrom<trinity_SceneObject>(chunk.Data);
-            }
-            catch
-            {
-                return 0;
-            }
-
-            if (sceneObject == null || chunk.Children == null || chunk.Children.Length == 0)
-            {
-                return 0;
-            }
-
-            int spawned = 0;
-            foreach (var child in chunk.Children)
-            {
-                if (child?.Type != nameof(trinity_ModelComponent))
-                {
-                    continue;
-                }
-
-                trinity_ModelComponent? modelComponent;
-                try
-                {
-                    modelComponent = FlatBufferConverter.DeserializeFrom<trinity_ModelComponent>(child.Data);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (modelComponent == null || string.IsNullOrWhiteSpace(modelComponent.FilePath))
-                {
-                    continue;
-                }
-
-                var resolved = ResolveModelPath(modelComponent.FilePath);
-                if (resolved == null)
-                {
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.WARNING,
-                        $"[Scene] Missing model file: {modelComponent.FilePath} (SceneObject={sceneObject.Name}, scene={Path.GetFileName(sceneFile)})");
-                    continue;
-                }
-
-                Model model;
-                try
-                {
-                    model = renderCtrl.renderer.AddSceneModel(resolved);
-                }
-                catch (Exception ex)
-                {
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.WARNING,
-                        $"[Scene] Failed to load model '{resolved}' (SceneObject={sceneObject.Name}): {ex.GetType().Name}: {ex.Message}");
-                    continue;
-                }
-                var mat = BuildModelMatrix(sceneObject.Srt, config.SpawnModelsAtOrigin, config.RotateModels180X, out var position, out var scale);
-                model.SetModelMatrix(mat);
-                spawnedPositions.Add(position);
-                AddModelToList(sceneObject.Name, modelComponent.FilePath, model);
-
-                if (MessageHandler.Instance.DebugLogsEnabled)
-                {
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.LOG,
-                        $"[Scene] Model '{sceneObject.Name}' -> '{modelComponent.FilePath}' pos={position} scale={scale}{(config.SpawnModelsAtOrigin ? " (origin override)" : "")}");
-                }
-                spawned++;
-            }
-
-            return spawned;
         }
 
         private void AddModelToList(string? sceneObjectName, string modelPath, Model model)
@@ -293,57 +348,42 @@ namespace TrinitySceneView
             }
         }
 
-        private Matrix4 BuildModelMatrix(trinity_Transform? srt, bool forceOrigin, bool rotate180x, out Vector3 position, out Vector3 scaleOut)
+        private static Matrix4 ApplyViewerMatrixOptions(Matrix4 baseMat, bool forceOrigin, bool rotate180x, bool rotate180y, out Vector3 position, out Vector3 scaleOut)
         {
-            position = Vector3.Zero;
-            scaleOut = Vector3.One;
-            if (srt == null)
-            {
-                if (!rotate180x)
-                {
-                    return Matrix4.Identity;
-                }
-
-                return Matrix4.CreateRotationX(MathHelper.Pi);
-            }
-
-            var scale = srt.Scale != null
-                ? new Vector3(srt.Scale.X, srt.Scale.Y, srt.Scale.Z)
-                : Vector3.One;
-            scaleOut = scale;
-
-            Quaternion rot = Quaternion.Identity;
-            if (srt.Rotate != null)
-            {
-                // Flatbuffers Transform.Rotate uses WXYZ ordering.
-                rot = new Quaternion(srt.Rotate.X, srt.Rotate.Y, srt.Rotate.Z, srt.Rotate.W);
-                rot.Normalize();
-            }
-
-            var trans = srt.Translate != null
-                ? new Vector3(srt.Translate.X, srt.Translate.Y, srt.Translate.Z)
-                : Vector3.Zero;
+            var mat = baseMat;
 
             if (forceOrigin)
             {
-                trans = Vector3.Zero;
+                mat.M41 = 0f;
+                mat.M42 = 0f;
+                mat.M43 = 0f;
             }
-            position = trans;
+            position = new Vector3(mat.M41, mat.M42, mat.M43);
 
-            // OpenGL / OpenTK use column-vector math: world = M * local.
-            // Scene transforms are authored as SRT, so build as T * R * S.
-            var baseMat =
-                Matrix4.CreateTranslation(trans) *
-                Matrix4.CreateFromQuaternion(rot) *
-                Matrix4.CreateScale(scale);
+            scaleOut = new Vector3(
+                new Vector3(mat.M11, mat.M12, mat.M13).Length,
+                new Vector3(mat.M21, mat.M22, mat.M23).Length,
+                new Vector3(mat.M31, mat.M32, mat.M33).Length);
 
             if (!rotate180x)
             {
-                return baseMat;
+                if (!rotate180y)
+                {
+                    return mat;
+                }
             }
 
-            // Apply additional global rotation at the root to match alternate coordinate conventions.
-            return Matrix4.CreateRotationX(MathHelper.Pi) * baseMat;
+            if (rotate180y)
+            {
+                mat = Matrix4.CreateRotationY(MathHelper.Pi) * mat;
+            }
+
+            if (rotate180x)
+            {
+                mat = Matrix4.CreateRotationX(MathHelper.Pi) * mat;
+            }
+
+            return mat;
         }
 
         private string? ResolveModelPath(string filePath)
@@ -377,6 +417,32 @@ namespace TrinitySceneView
                 return combined;
             }
 
+            // Be forgiving if the configured asset root is a subfolder of the real dump root.
+            // Try a few parents so references like "ik_chara/..." can still resolve.
+            try
+            {
+                var cur = assetRoot;
+                for (int i = 0; i < 3; i++)
+                {
+                    var parent = Directory.GetParent(cur);
+                    if (parent == null)
+                    {
+                        break;
+                    }
+
+                    cur = parent.FullName;
+                    var parentCombined = Path.GetFullPath(Path.Combine(cur, normalized));
+                    if (File.Exists(parentCombined))
+                    {
+                        return parentCombined;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
             return null;
         }
 
@@ -391,8 +457,24 @@ namespace TrinitySceneView
             // Prefer earlier matches (closest to drive root).
             string[] knownRoots =
             {
+                "ai_influence",
+                "avalon",
                 "field_graphic",
                 "field",
+                "ik_ai_behavior",
+                "ik_chara",
+                "ik_demo",
+                "ik_effect",
+                "ik_event",
+                "ik_message",
+                "ik_pokemon",
+                "light",
+                "param_ai",
+                "param_chr",
+                "script",
+                "system",
+                "system_resource",
+                "world",
                 "common",
                 "legend",
                 "model",

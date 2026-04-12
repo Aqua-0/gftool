@@ -4,6 +4,9 @@ using System.IO;
 using System.Linq;
 using GFTool.Renderer.Scene.GraphicsObjects;
 using OpenTK.Mathematics;
+using Trinity.Core.Flatbuffers.TR.Model;
+using Trinity.Core.Flatbuffers.Utils;
+using Trinity.Core.Utils;
 
 namespace TrinityModelViewer.Export
 {
@@ -34,17 +37,18 @@ namespace TrinityModelViewer.Export
         private const int ParamTable_Name = 0;
         private const int ParamTable_Values = 1;
 
-        public static void ExportEditedTrmmtPreserveAllFields(string sourceTrmmtPath, Model model, string outputTrmmtPath)
+        public static void ExportEditedTrmmtPreserveAllFields(
+            string sourceTrmmtPath,
+            Model model,
+            string outputTrmmtPath,
+            IReadOnlyList<Model.NewMaterialCloneRequest>? cloneRequests = null)
         {
             if (string.IsNullOrWhiteSpace(sourceTrmmtPath)) throw new ArgumentException("Missing source TRMMT path.", nameof(sourceTrmmtPath));
             if (model == null) throw new ArgumentNullException(nameof(model));
             if (string.IsNullOrWhiteSpace(outputTrmmtPath)) throw new ArgumentException("Missing output TRMMT path.", nameof(outputTrmmtPath));
             if (!File.Exists(sourceTrmmtPath)) throw new FileNotFoundException("Source TRMMT not found.", sourceTrmmtPath);
 
-            var data = File.ReadAllBytes(sourceTrmmtPath);
-            var fb = new FlatBufferBinary(data);
-
-            bool changed = PatchTrmmtInPlace(fb, model);
+            var bytes = BuildEditedTrmmtBytesPreserveAllFields(sourceTrmmtPath, model, cloneRequests, out bool changed);
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputTrmmtPath) ?? ".");
             if (!changed)
@@ -56,15 +60,114 @@ namespace TrinityModelViewer.Export
                 return;
             }
 
-            File.WriteAllBytes(outputTrmmtPath, fb.Buffer);
+            File.WriteAllBytes(outputTrmmtPath, bytes);
         }
 
-        private static bool PatchTrmmtInPlace(FlatBufferBinary fb, Model model)
+        public static void ExportEditedTrmmtUnsafeReserializeAppend(
+            string sourceTrmmtPath,
+            Model model,
+            string outputTrmmtPath,
+            IReadOnlyList<Model.NewMaterialCloneRequest> cloneRequests)
+        {
+            if (string.IsNullOrWhiteSpace(sourceTrmmtPath)) throw new ArgumentException("Missing source TRMMT path.", nameof(sourceTrmmtPath));
+            if (model == null) throw new ArgumentNullException(nameof(model));
+            if (string.IsNullOrWhiteSpace(outputTrmmtPath)) throw new ArgumentException("Missing output TRMMT path.", nameof(outputTrmmtPath));
+            if (!File.Exists(sourceTrmmtPath)) throw new FileNotFoundException("Source TRMMT not found.", sourceTrmmtPath);
+
+            var patched = BuildEditedTrmmtBytesPreserveAllFields(sourceTrmmtPath, model, cloneRequests, out _);
+
+            TrmmtMetadataFile? typed;
+            try
+            {
+                typed = FlatBufferConverter.DeserializeFrom<TrmmtMetadataFile>(patched);
+            }
+            catch
+            {
+                typed = null;
+            }
+
+            if (typed?.ItemList == null || typed.ItemList.Length == 0)
+            {
+                ExportEditedTrmmtPreserveAllFields(sourceTrmmtPath, model, outputTrmmtPath, cloneRequests);
+                return;
+            }
+
+            var unsafeRequests = cloneRequests
+                .Where(r => r.TrmmtCloneMode == Model.NewMaterialTrmmtCloneMode.Unsafe &&
+                            !string.IsNullOrWhiteSpace(r.TemplateName) &&
+                            !string.IsNullOrWhiteSpace(r.NewName))
+                .ToArray();
+
+            if (unsafeRequests.Length == 0)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(outputTrmmtPath) ?? ".");
+                File.WriteAllBytes(outputTrmmtPath, patched);
+                return;
+            }
+
+            foreach (var item in typed.ItemList)
+            {
+                if (item?.ParamList == null)
+                {
+                    continue;
+                }
+
+                foreach (var param in item.ParamList)
+                {
+                    if (param == null || !param.UseNoAnime || param.NoAnimeParam?.MaterialList == null)
+                    {
+                        continue;
+                    }
+
+                    var mats = param.NoAnimeParam.MaterialList.ToList();
+                    foreach (var req in unsafeRequests)
+                    {
+                        if (mats.Any(m => m != null && string.Equals(m.MaterialName, req.NewName, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+
+                        var templateMat = mats.FirstOrDefault(m => m != null && string.Equals(m.MaterialName, req.TemplateName, StringComparison.OrdinalIgnoreCase));
+                        if (templateMat == null)
+                        {
+                            continue;
+                        }
+
+                        mats.Add(CloneTrmmtMetaMaterial(templateMat, req.NewName));
+                    }
+
+                    param.NoAnimeParam.MaterialList = mats.ToArray();
+                }
+            }
+
+            var outBytes = FlatBufferConverter.SerializeFrom(typed);
+            Directory.CreateDirectory(Path.GetDirectoryName(outputTrmmtPath) ?? ".");
+            File.WriteAllBytes(outputTrmmtPath, outBytes);
+        }
+
+        private static byte[] BuildEditedTrmmtBytesPreserveAllFields(
+            string sourceTrmmtPath,
+            Model model,
+            IReadOnlyList<Model.NewMaterialCloneRequest>? cloneRequests,
+            out bool changed)
+        {
+            var data = File.ReadAllBytes(sourceTrmmtPath);
+            var fb = new FlatBufferBinary(data);
+            changed = PatchTrmmtInPlace(fb, model, cloneRequests);
+            return fb.Buffer;
+        }
+
+        private static bool PatchTrmmtInPlace(FlatBufferBinary fb, Model model, IReadOnlyList<Model.NewMaterialCloneRequest>? cloneRequests)
         {
             var selectionMap = BuildSelectionMap(model.GetMaterialMetadataSelectionsSnapshot());
             var overrideGroups = BuildOverrideGroups(model.GetMaterialMetadataValueOverridesSnapshot());
+            var safeClone = (cloneRequests ?? Array.Empty<Model.NewMaterialCloneRequest>())
+                .Where(r => r.TrmmtCloneMode == Model.NewMaterialTrmmtCloneMode.Safe &&
+                            !string.IsNullOrWhiteSpace(r.TemplateName) &&
+                            !string.IsNullOrWhiteSpace(r.NewName))
+                .ToArray();
 
-            if (selectionMap.Count == 0 && overrideGroups.Count == 0)
+            if (selectionMap.Count == 0 && overrideGroups.Count == 0 && safeClone.Length == 0)
             {
                 return false;
             }
@@ -197,7 +300,227 @@ namespace TrinityModelViewer.Export
                 }
             }
 
+            if (safeClone.Length > 0)
+            {
+                anyPatched |= TryCloneMaterialVariationValuesInPlace(fb, safeClone);
+            }
+
             return anyPatched;
+        }
+
+        private static bool TryCloneMaterialVariationValuesInPlace(FlatBufferBinary fb, IReadOnlyList<Model.NewMaterialCloneRequest> cloneRequests)
+        {
+            int root = fb.GetRootTableOffset();
+            int itemListField = fb.GetFieldAbsoluteOffset(root, Root_ItemList);
+            if (itemListField == 0)
+            {
+                return false;
+            }
+
+            int itemVec = fb.GetVectorDataStartFromUOffsetField(itemListField, out int itemCount);
+            if (itemVec == 0 || itemCount <= 0)
+            {
+                return false;
+            }
+
+            bool any = false;
+
+            for (int itemIndex = 0; itemIndex < itemCount; itemIndex++)
+            {
+                int item = fb.GetVectorElementTableOffset(itemVec, itemIndex);
+                if (item == 0)
+                {
+                    continue;
+                }
+
+                int paramListField = fb.GetFieldAbsoluteOffset(item, Item_ParamList);
+                if (paramListField == 0)
+                {
+                    continue;
+                }
+
+                int paramVec = fb.GetVectorDataStartFromUOffsetField(paramListField, out int paramCount);
+                if (paramVec == 0 || paramCount <= 0)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < paramCount; p++)
+                {
+                    int param = fb.GetVectorElementTableOffset(paramVec, p);
+                    if (param == 0)
+                    {
+                        continue;
+                    }
+
+                    bool useNoAnime = ReadBoolField(fb, param, MetaParam_UseNoAnime);
+                    if (!useNoAnime)
+                    {
+                        continue;
+                    }
+
+                    int noAnimeField = fb.GetFieldAbsoluteOffset(param, MetaParam_NoAnimeParam);
+                    if (noAnimeField == 0)
+                    {
+                        continue;
+                    }
+
+                    int noAnime = fb.DerefUOffset(noAnimeField);
+                    if (noAnime == 0)
+                    {
+                        continue;
+                    }
+
+                    int materialListField = fb.GetFieldAbsoluteOffset(noAnime, NoAnime_MaterialList);
+                    if (materialListField == 0)
+                    {
+                        continue;
+                    }
+
+                    int matVec = fb.GetVectorDataStartFromUOffsetField(materialListField, out int matCount);
+                    if (matVec == 0 || matCount <= 0)
+                    {
+                        continue;
+                    }
+
+                    var nameToMat = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    for (int m = 0; m < matCount; m++)
+                    {
+                        int mat = fb.GetVectorElementTableOffset(matVec, m);
+                        if (mat == 0)
+                        {
+                            continue;
+                        }
+                        string matName = ReadStringField(fb, mat, MetaMaterial_Name);
+                        if (!string.IsNullOrWhiteSpace(matName) && !nameToMat.ContainsKey(matName))
+                        {
+                            nameToMat[matName] = mat;
+                        }
+                    }
+
+                    foreach (var req in cloneRequests)
+                    {
+                        if (!nameToMat.TryGetValue(req.TemplateName, out int srcMat) ||
+                            !nameToMat.TryGetValue(req.NewName, out int dstMat))
+                        {
+                            continue;
+                        }
+
+                        any |= CopyParamTableValues(fb, srcMat, dstMat, MetaMaterial_FloatList, elementSizeBytes: 4);
+                        any |= CopyParamTableValues(fb, srcMat, dstMat, MetaMaterial_IntList, elementSizeBytes: 4);
+                        any |= CopyParamTableValues(fb, srcMat, dstMat, MetaMaterial_Float3List, elementSizeBytes: 12);
+                        any |= CopyParamTableValues(fb, srcMat, dstMat, MetaMaterial_Float4List, elementSizeBytes: 16);
+                    }
+                }
+            }
+
+            return any;
+        }
+
+        private static bool CopyParamTableValues(FlatBufferBinary fb, int srcMat, int dstMat, int fieldIndex, int elementSizeBytes)
+        {
+            int srcField = fb.GetFieldAbsoluteOffset(srcMat, fieldIndex);
+            int dstField = fb.GetFieldAbsoluteOffset(dstMat, fieldIndex);
+            if (srcField == 0 || dstField == 0)
+            {
+                return false;
+            }
+
+            int srcVec = fb.GetVectorDataStartFromUOffsetField(srcField, out int srcCount);
+            int dstVec = fb.GetVectorDataStartFromUOffsetField(dstField, out int dstCount);
+            if (srcVec == 0 || dstVec == 0 || srcCount <= 0 || dstCount <= 0)
+            {
+                return false;
+            }
+
+            var srcByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < srcCount; i++)
+            {
+                int p = fb.GetVectorElementTableOffset(srcVec, i);
+                if (p == 0)
+                {
+                    continue;
+                }
+                string name = ReadStringField(fb, p, ParamTable_Name);
+                if (!string.IsNullOrWhiteSpace(name) && !srcByName.ContainsKey(name))
+                {
+                    srcByName[name] = p;
+                }
+            }
+
+            bool any = false;
+            for (int i = 0; i < dstCount; i++)
+            {
+                int dstParam = fb.GetVectorElementTableOffset(dstVec, i);
+                if (dstParam == 0)
+                {
+                    continue;
+                }
+                string name = ReadStringField(fb, dstParam, ParamTable_Name);
+                if (string.IsNullOrWhiteSpace(name) || !srcByName.TryGetValue(name, out int srcParam))
+                {
+                    continue;
+                }
+
+                int srcValuesField = fb.GetFieldAbsoluteOffset(srcParam, ParamTable_Values);
+                int dstValuesField = fb.GetFieldAbsoluteOffset(dstParam, ParamTable_Values);
+                if (srcValuesField == 0 || dstValuesField == 0)
+                {
+                    continue;
+                }
+
+                int srcDataStart = fb.GetVectorDataStartFromUOffsetField(srcValuesField, out int srcLen);
+                int dstDataStart = fb.GetVectorDataStartFromUOffsetField(dstValuesField, out int dstLen);
+                if (srcDataStart == 0 || dstDataStart == 0 || srcLen <= 0 || dstLen <= 0)
+                {
+                    continue;
+                }
+
+                int len = Math.Min(srcLen, dstLen);
+                int bytes = len * elementSizeBytes;
+                Buffer.BlockCopy(fb.Buffer, srcDataStart, fb.Buffer, dstDataStart, bytes);
+                any = true;
+            }
+
+            return any;
+        }
+
+        private static TrmmtMetaMaterial CloneTrmmtMetaMaterial(TrmmtMetaMaterial src, string newName)
+        {
+            var dst = new TrmmtMetaMaterial
+            {
+                MaterialName = newName ?? string.Empty,
+                FloatParamList = (src.FloatParamList ?? Array.Empty<TrmmtMetaFloatParams>())
+                    .Select(p => p == null ? null! : new TrmmtMetaFloatParams { Name = p.Name ?? string.Empty, Values = (float[])(p.Values?.Clone() ?? Array.Empty<float>()) })
+                    .Where(p => p != null)
+                    .ToArray(),
+                Float3ParamList = (src.Float3ParamList ?? Array.Empty<TrmmtMetaFloat3Params>())
+                    .Select(p => p == null
+                        ? null!
+                        : new TrmmtMetaFloat3Params
+                        {
+                            Name = p.Name ?? string.Empty,
+                            Values = (p.Values ?? Array.Empty<Vector3f>()).Select(v => v == null ? null! : new Vector3f { X = v.X, Y = v.Y, Z = v.Z }).ToArray()
+                        })
+                    .Where(p => p != null)
+                    .ToArray(),
+                Float4ParamList = (src.Float4ParamList ?? Array.Empty<TrmmtMetaFloat4Params>())
+                    .Select(p => p == null
+                        ? null!
+                        : new TrmmtMetaFloat4Params
+                        {
+                            Name = p.Name ?? string.Empty,
+                            Values = (p.Values ?? Array.Empty<Vector4f>()).Select(v => v == null ? null! : new Vector4f { W = v.W, X = v.X, Y = v.Y, Z = v.Z }).ToArray()
+                        })
+                    .Where(p => p != null)
+                    .ToArray(),
+                IntParamList = (src.IntParamList ?? Array.Empty<TrmmtMetaIntParams>())
+                    .Select(p => p == null ? null! : new TrmmtMetaIntParams { Name = p.Name ?? string.Empty, Values = (int[])(p.Values?.Clone() ?? Array.Empty<int>()) })
+                    .Where(p => p != null)
+                    .ToArray()
+            };
+
+            return dst;
         }
 
         private static bool PatchFloatList(FlatBufferBinary fb, int mat, int fieldIndex, List<Model.MaterialMetadataValueOverride> overrides)

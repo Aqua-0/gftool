@@ -29,20 +29,21 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             var skinPalette = (useSkinPalette || autoMap) ? armature.BuildSkinningPalette() : Array.Empty<int>();
             blendIndexRemapModes = new BlendIndexRemapMode[BlendIndiciesOriginal.Count];
 
-            for (int i = 0; i < BlendIndiciesOriginal.Count; i++)
-            {
-                var source = BlendIndiciesOriginal[i];
-                var sourceWeights = i < BlendWeights.Count ? BlendWeights[i] : null;
-                var boneWeights = i < BlendBoneWeights.Count ? BlendBoneWeights[i] : null;
-                var mapped = new Vector4[source.Length];
-                int maxIndexBefore = GetMaxIndexUsed(source, sourceWeights);
+	            for (int i = 0; i < BlendIndiciesOriginal.Count; i++)
+	            {
+	                var source = BlendIndiciesOriginal[i];
+	                var sourceWeights = i < BlendWeights.Count ? BlendWeights[i] : null;
+	                var boneWeights = i < BlendBoneWeights.Count ? BlendBoneWeights[i] : null;
+	                var mapped = new Vector4[source.Length];
+	                int maxIndexBefore = GetMaxIndexUsed(source, sourceWeights);
+	                string debugMeshName = i < SubmeshNames.Count ? SubmeshNames[i]
+	                    : (i < BlendMeshNames.Count ? BlendMeshNames[i] : $"Submesh {i}");
 
-                if (MessageHandler.Instance.DebugLogsEnabled && boneWeights != null && boneWeights.Length > 0 && boneWeights.Length <= 4)
-                {
-                    var meshName = i < BlendMeshNames.Count ? BlendMeshNames[i] : $"Submesh {i}";
-                    string entries = string.Join(", ", boneWeights.Select((bw, idx) => $"[{idx}]=({bw.RigIndex},{bw.RigWeight:0.###})"));
-                    MessageHandler.Instance.AddMessage(MessageType.LOG, $"[Skin] BoneWeights mesh={meshName} len={boneWeights.Length} {entries}");
-                }
+	                if (MessageHandler.Instance.DebugLogsEnabled && boneWeights != null && boneWeights.Length > 0 && boneWeights.Length <= 4)
+	                {
+	                    string entries = string.Join(", ", boneWeights.Select((bw, idx) => $"[{idx}]=({bw.RigIndex},{bw.RigWeight:0.###})"));
+	                    MessageHandler.Instance.AddMessage(MessageType.LOG, $"[Skin] BoneWeights mesh={debugMeshName} len={boneWeights.Length} {entries}");
+	                }
 
                 bool canRemapViaBoneWeights = false;
                 if (boneWeights != null && boneWeights.Length > 0 && maxIndexBefore >= 0 && maxIndexBefore < boneWeights.Length)
@@ -122,20 +123,23 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 BlendIndicies[i] = mapped;
                 UpdateBlendIndicesBuffer(i);
 
-                if (MessageHandler.Instance.DebugLogsEnabled)
-                {
-                    int maxIndexAfter = GetMaxIndexUsed(mapped, sourceWeights);
-                    string meshName = i < BlendMeshNames.Count ? BlendMeshNames[i] : $"Submesh {i}";
-                    MessageHandler.Instance.AddMessage(
-                        MessageType.LOG,
-                        $"[Skin] Remap result mesh={meshName} maxIndexAfter={maxIndexAfter}");
+	                if (MessageHandler.Instance.DebugLogsEnabled)
+	                {
+	                    int maxIndexAfter = GetMaxIndexUsed(mapped, sourceWeights);
+	                    string meshName = debugMeshName;
+	                    MessageHandler.Instance.AddMessage(
+	                        MessageType.LOG,
+	                        $"[Skin] Remap result mesh={meshName} maxIndexAfter={maxIndexAfter}");
 
                     if (meshName.IndexOf("eye", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         meshName.IndexOf("mouth", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         meshName.IndexOf("teeth", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         meshName.IndexOf("tongue", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         meshName.IndexOf("face", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        meshName.IndexOf("body_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0)
+                        meshName.IndexOf("body_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        meshName.IndexOf("arm_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        meshName.IndexOf("finger_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        meshName.IndexOf("tail_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         LogInfluenceSummary(meshName, mapped, sourceWeights);
                     }
@@ -187,23 +191,48 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 return;
             }
 
-            var top = totals
-                .OrderByDescending(kv => kv.Value)
-                .Take(8)
-                .Select(kv =>
-                {
-                    string name = kv.Key >= 0 && kv.Key < armature.Bones.Count ? armature.Bones[kv.Key].Name : "<out-of-range>";
-                    return $"{name}({kv.Key})={kv.Value:0.###}";
-                });
+	            var top = totals
+	                .OrderByDescending(kv => kv.Value)
+	                .Take(8)
+	                .Select(kv =>
+	                {
+	                    string name = kv.Key >= 0 && kv.Key < armature.Bones.Count ? armature.Bones[kv.Key].Name : "<out-of-range>";
+	                    return (index: kv.Key, name, weight: kv.Value);
+	                })
+	                .ToArray();
 
-            MessageHandler.Instance.AddMessage(
-                MessageType.LOG,
-                $"[Skin] InfluenceSummary mesh={meshName} samples={sampleCount} invalid={invalid} top={string.Join(", ", top)}");
+	            MessageHandler.Instance.AddMessage(
+	                MessageType.LOG,
+	                $"[Skin] InfluenceSummary mesh={meshName} samples={sampleCount} invalid={invalid} top={string.Join(", ", top.Select(t => $"{t.name}({t.index})={t.weight:0.###}"))}");
 
-            void Acc(float indexValue, float weightValue)
-            {
-                if (weightValue <= 0.0001f)
-                {
+	            bool alwaysLogTopDetails =
+	                meshName.IndexOf("arm_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0 ||
+	                meshName.IndexOf("finger_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0 ||
+	                meshName.IndexOf("tail_mesh_shape", StringComparison.OrdinalIgnoreCase) >= 0;
+
+	            if (top.Length > 0 && (MessageHandler.Instance.DebugLogsEnabled || alwaysLogTopDetails))
+	            {
+	                var details = top.Select(t =>
+	                {
+	                    if (t.index < 0 || t.index >= armature.Bones.Count)
+	                    {
+	                        return $"{t.name}({t.index})";
+	                    }
+
+	                    var b = armature.Bones[t.index];
+	                    string parent = b.ParentIndex >= 0 && b.ParentIndex < armature.Bones.Count ? armature.Bones[b.ParentIndex].Name : "<none>";
+	                    return $"{t.name}({t.index}):w={t.weight:0.###},ssc={b.UseSegmentScaleCompensate},invBind={(b.HasJointInverseBind ? "joint" : "computed")},parent={parent}({b.ParentIndex})";
+	                });
+
+	                MessageHandler.Instance.AddMessage(
+	                    MessageType.LOG,
+	                    $"[Skin] InfluenceTopDetails mesh={meshName} {string.Join("; ", details)}");
+	            }
+
+	            void Acc(float indexValue, float weightValue)
+	            {
+	                if (weightValue <= 0.0001f)
+	                {
                     return;
                 }
 
@@ -245,31 +274,48 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             if (RenderOptions.DeterministicSkinningAndAnimation)
             {
                 // Deterministic fixed-priority mapping:
-                // - Prefer joint-info index space when indices are in-range.
-                // - Else prefer per-submesh boneWeight table only when indices are in-range.
-                // - Else prefer skinning palette / bone meta only when indices are in-range.
+                // - Prefer per-submesh boneWeight table only when indices are in-range.
+                // - Else prefer skinning-palette index space when indices are in-range.
+                // - Else prefer joint-info index space when indices are in-range.
+                // - Else prefer bone meta only when indices are in-range.
                 // - Otherwise keep indices as-is (node space).
-                if (canMapJointInfo && maxIndexBefore >= 0 && maxIndexBefore < armature.JointInfoCount)
-                {
-                    return BlendIndexRemapMode.JointInfo;
-                }
+                BlendIndexRemapMode chosenMode = BlendIndexRemapMode.None;
+                string reason = "none";
 
                 if (canRemapViaBoneWeights && boneWeights != null && maxIndexBefore >= 0 && maxIndexBefore < boneWeights.Length)
                 {
-                    return BlendIndexRemapMode.BoneWeights;
+                    chosenMode = BlendIndexRemapMode.BoneWeights;
+                    reason = "boneWeights_inRange";
                 }
-
-                if (canMapSkinPalette && maxIndexBefore >= 0 && maxIndexBefore < skinPalette.Length)
+                else if (canMapSkinPalette && maxIndexBefore >= 0 && maxIndexBefore < skinPalette.Length)
                 {
-                    return BlendIndexRemapMode.SkinningPalette;
+                    chosenMode = BlendIndexRemapMode.SkinningPalette;
+                    reason = "palette_inRange";
                 }
-
-                if (canMapBoneMeta && maxIndexBefore >= 0 && maxIndexBefore < armature.BoneMetaCount)
+                else if (canMapJointInfo && maxIndexBefore >= 0 && maxIndexBefore < armature.JointInfoCount)
                 {
-                    return BlendIndexRemapMode.BoneMeta;
+                    chosenMode = BlendIndexRemapMode.JointInfo;
+                    reason = "jointInfo_inRange";
+                }
+                else if (canMapBoneMeta && maxIndexBefore >= 0 && maxIndexBefore < armature.BoneMetaCount)
+                {
+                    chosenMode = BlendIndexRemapMode.BoneMeta;
+                    reason = "boneMeta_inRange";
                 }
 
-                return BlendIndexRemapMode.None;
+	                if (MessageHandler.Instance.DebugLogsEnabled)
+	                {
+	                    var sourceIndices = BlendIndiciesOriginal[submeshIndex];
+	                    var sourceWeights = submeshIndex < BlendWeights.Count ? BlendWeights[submeshIndex] : null;
+	                    var score = ScoreBlendIndexMapping(sourceIndices, sourceWeights, chosenMode, boneWeights, skinPalette);
+	                    string meshName = submeshIndex < SubmeshNames.Count ? SubmeshNames[submeshIndex]
+	                        : (submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : $"Submesh {submeshIndex}");
+	                    MessageHandler.Instance.AddMessage(
+	                        MessageType.LOG,
+	                        $"[Skin] Remap pick mesh={meshName} maxIndexUsed={maxIndexBefore} boneWeights={(boneWeights?.Length ?? 0)} jointInfo={armature.JointInfoCount} palette={skinPalette.Length} boneMeta={armature.BoneMetaCount} mode={chosenMode} score=(oor={score.outOfRange}, nonInfluencer={score.nonInfluencer}) preferJointInfo=False deterministic=True reason={reason}");
+	                }
+
+                return chosenMode;
             }
 
             if (!autoMap)
@@ -301,12 +347,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
 
                 preferJointInfo = !mappingIsIdentity;
-            }
+	            }
 
-            int boneWeightLen = boneWeights?.Length ?? 0;
-            var meshNameForHeuristics = submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : string.Empty;
-            bool isEyeMesh = !string.IsNullOrWhiteSpace(meshNameForHeuristics) &&
-                             meshNameForHeuristics.IndexOf("eye", StringComparison.OrdinalIgnoreCase) >= 0;
+	            int boneWeightLen = boneWeights?.Length ?? 0;
+	            var meshNameForHeuristics = submeshIndex < SubmeshNames.Count ? SubmeshNames[submeshIndex]
+	                : (submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : string.Empty);
+	            bool isEyeMesh = !string.IsNullOrWhiteSpace(meshNameForHeuristics) &&
+	                             meshNameForHeuristics.IndexOf("eye", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTongueLike = !string.IsNullOrWhiteSpace(meshNameForHeuristics) &&
                                 meshNameForHeuristics.IndexOf("tongue", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isGlassesLike = !string.IsNullOrWhiteSpace(meshNameForHeuristics) &&
@@ -505,13 +552,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 }
             }
 
-            if (MessageHandler.Instance.DebugLogsEnabled)
-            {
-                string meshName = submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : $"Submesh {submeshIndex}";
-                MessageHandler.Instance.AddMessage(
-                    MessageType.LOG,
-                    $"[Skin] Remap pick mesh={meshName} maxIndexUsed={maxIndexBefore} boneWeights={(boneWeights?.Length ?? 0)} jointInfo={armature.JointInfoCount} palette={skinPalette.Length} boneMeta={armature.BoneMetaCount} mode={bestMode} score=(oor={bestScore.outOfRange}, nonInfluencer={bestScore.nonInfluencer}) preferJointInfo={preferJointInfo}");
-            }
+	            if (MessageHandler.Instance.DebugLogsEnabled)
+	            {
+	                string meshName = submeshIndex < SubmeshNames.Count ? SubmeshNames[submeshIndex]
+	                    : (submeshIndex < BlendMeshNames.Count ? BlendMeshNames[submeshIndex] : $"Submesh {submeshIndex}");
+	                MessageHandler.Instance.AddMessage(
+	                    MessageType.LOG,
+	                    $"[Skin] Remap pick mesh={meshName} maxIndexUsed={maxIndexBefore} boneWeights={(boneWeights?.Length ?? 0)} jointInfo={armature.JointInfoCount} palette={skinPalette.Length} boneMeta={armature.BoneMetaCount} mode={bestMode} score=(oor={bestScore.outOfRange}, nonInfluencer={bestScore.nonInfluencer}) preferJointInfo={preferJointInfo}");
+	            }
 
             return bestMode;
         }

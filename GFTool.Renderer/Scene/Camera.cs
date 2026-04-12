@@ -12,6 +12,7 @@ namespace GFTool.Renderer.Scene
         private ProjectionType projMode = ProjectionType.Perspective;
         public float NearPlane { get; set; } = 0.1f;
         public float FarPlane { get; set; } = 100.0f;
+        public float FovDegrees { get; private set; } = 45.0f;
         public bool CanMove { get; set; } = true;
 
         private int Width, Height;
@@ -73,7 +74,7 @@ namespace GFTool.Renderer.Scene
 
             if (projMode == ProjectionType.Perspective)
             {
-                float fov = MathHelper.DegreesToRadians(45.0f);
+                float fov = MathHelper.DegreesToRadians(Math.Clamp(FovDegrees, 1.0f, 175.0f));
                 projMat = Matrix4.CreatePerspectiveFieldOfView(fov, aspectRatio, NearPlane, FarPlane);
             }
             else if (projMode == ProjectionType.Orthographic)
@@ -93,6 +94,29 @@ namespace GFTool.Renderer.Scene
             Width = Math.Max(1, width);
             Height = Math.Max(1, height);
             UpdateProjMatrix();
+        }
+
+        public void SetFovDegrees(float fovDegrees)
+        {
+            FovDegrees = Math.Clamp(fovDegrees, 1.0f, 175.0f);
+            UpdateProjMatrix();
+        }
+
+        public void SetPoseFromEulerDegrees(Vector3 position, Vector3 eulerDegrees, float distanceOverride = 1.0f)
+        {
+            // Orbit camera: keep (pos, rot) by choosing a target 1 unit ahead of the camera.
+            float pitchRad = MathHelper.DegreesToRadians(eulerDegrees.X);
+            float yawRad = MathHelper.DegreesToRadians(eulerDegrees.Y);
+
+            pitch = Math.Clamp(pitchRad, -PITCH_LIMIT, PITCH_LIMIT);
+            yaw = WrapAngle(yawRad);
+            rotationInitialized = true;
+            Transform.Rotation = Quaternion.FromEulerAngles(pitch, yaw, 0f);
+
+            var front = FrontFromAngles(yaw, pitch);
+            distance = Math.Max(0.1f, distanceOverride);
+            target = position + (front * distance);
+            UpdateOrbitPosition();
         }
 
 

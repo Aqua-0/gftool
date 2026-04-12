@@ -4,7 +4,7 @@ using Trinity.Core.Flatbuffers.Utils;
 
 namespace Trinity.Core.Flatbuffers.TR.Model
 {
-    // TRSKL (.trskl) schema for the Titan/Ikkaku “node_list + joint_info_list” flavor observed in SV/ZA samples.
+    // TRSKL (.trskl) schema for the node_list + joint_info_list layout observed in SV/ZA.
     // PokeDocs documents other TRSKL flavors; treat this as a local variant driven by binary evidence.
 
     [FlatBufferTable]

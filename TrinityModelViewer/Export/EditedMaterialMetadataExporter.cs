@@ -13,7 +13,23 @@ namespace TrinityModelViewer.Export
             if (string.IsNullOrWhiteSpace(outputTrmmtPath)) throw new ArgumentException("Missing output TRMMT path.", nameof(outputTrmmtPath));
             if (!File.Exists(sourceTrmmtPath)) throw new FileNotFoundException("Source TRMMT not found.", sourceTrmmtPath);
 
-            TrmmtBinaryPatcher.ExportEditedTrmmtPreserveAllFields(sourceTrmmtPath, model, outputTrmmtPath);
+            var cloneRequests = model.GetNewMaterialCloneRequestsSnapshot();
+            var maxMode = Model.NewMaterialTrmmtCloneMode.None;
+            for (int i = 0; i < cloneRequests.Count; i++)
+            {
+                if (cloneRequests[i].TrmmtCloneMode > maxMode)
+                {
+                    maxMode = cloneRequests[i].TrmmtCloneMode;
+                }
+            }
+
+            if (maxMode == Model.NewMaterialTrmmtCloneMode.Unsafe)
+            {
+                TrmmtBinaryPatcher.ExportEditedTrmmtUnsafeReserializeAppend(sourceTrmmtPath, model, outputTrmmtPath, cloneRequests);
+                return;
+            }
+
+            TrmmtBinaryPatcher.ExportEditedTrmmtPreserveAllFields(sourceTrmmtPath, model, outputTrmmtPath, cloneRequests);
         }
     }
 }

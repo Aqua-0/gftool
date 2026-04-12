@@ -22,13 +22,16 @@ namespace TrinityModelViewer
                 settings.ExportModelPcBaseOnExport,
                 settings.DebugLogs,
                 settings.AutoLoadAnimations,
+                settings.AutoLoadAnimationsMaxCount,
                 settings.AutoLoadFirstGfpakModel,
                 settings.ShowMultipleModels,
                 settings.ShaderGame,
                 settings.EnableExtractedOutFallback,
                 settings.ActiveExtractedGame,
                 settings.ZaExtractedOutRoot,
-                settings.SvExtractedOutRoot);
+                settings.SvExtractedOutRoot,
+                settings.UseUltimateTexForBntxExport,
+                settings.UltimateTexCliPath);
             ApplyTheme(dialog);
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
@@ -41,6 +44,7 @@ namespace TrinityModelViewer
             settings.ExportModelPcBaseOnExport = dialog.ExportModelPcBaseOnExportEnabled;
             settings.DebugLogs = dialog.DebugLogsEnabled;
             settings.AutoLoadAnimations = dialog.AutoLoadAnimationsEnabled;
+            settings.AutoLoadAnimationsMaxCount = dialog.AutoLoadAnimationsMaxCount;
             settings.AutoLoadFirstGfpakModel = dialog.AutoLoadFirstGfpakModelEnabled;
             settings.ShowMultipleModels = dialog.ShowMultipleModelsEnabled;
             settings.ShaderGame = dialog.ShaderGameSelection;
@@ -48,6 +52,8 @@ namespace TrinityModelViewer
             settings.ActiveExtractedGame = dialog.ActiveExtractedGameSelection;
             settings.ZaExtractedOutRoot = dialog.ZaExtractedOutRoot;
             settings.SvExtractedOutRoot = dialog.SvExtractedOutRoot;
+            settings.UseUltimateTexForBntxExport = dialog.UseUltimateTexForBntxExportEnabled;
+            settings.UltimateTexCliPath = dialog.UltimateTexCliPath;
             settings.Save();
             MessageHandler.Instance.DebugLogsEnabled = settings.DebugLogs;
             ApplyTheme();
@@ -137,6 +143,7 @@ namespace TrinityModelViewer
             displaySpecularToolStripMenuItem.Checked = string.Equals(settings.DisplayBuffer, "Specular", StringComparison.OrdinalIgnoreCase);
             displayAOToolStripMenuItem.Checked = string.Equals(settings.DisplayBuffer, "AO", StringComparison.OrdinalIgnoreCase);
             displayDepthToolStripMenuItem.Checked = string.Equals(settings.DisplayBuffer, "Depth", StringComparison.OrdinalIgnoreCase);
+            displayEmissionToolStripMenuItem.Checked = string.Equals(settings.DisplayBuffer, "Emission", StringComparison.OrdinalIgnoreCase);
             shaderDebugOffToolStripMenuItem.Checked = settings.ShaderDebugMode == 0;
             shaderDebugIepTextureToolStripMenuItem.Checked = settings.ShaderDebugMode == 1;
             shaderDebugIepLayerMaskToolStripMenuItem.Checked = settings.ShaderDebugMode == 2;
@@ -155,6 +162,21 @@ namespace TrinityModelViewer
             if (useBackupIkCharacterShaderToolStripMenuItem != null)
             {
                 useBackupIkCharacterShaderToolStripMenuItem.Checked = settings.UseBackupIkCharacterShader;
+            }
+            if (teraEffectToolStripMenuItem != null)
+            {
+                teraEffectToolStripMenuItem.Checked = settings.EnableTeraEffect;
+            }
+            if (teraTypeMenuToolStripMenuItem != null)
+            {
+                teraTypeMenuToolStripMenuItem.Enabled = settings.EnableTeraEffect;
+                foreach (ToolStripItem item in teraTypeMenuToolStripMenuItem.DropDownItems)
+                {
+                    if (item is ToolStripMenuItem menuItem && menuItem.Tag is int idx)
+                    {
+                        menuItem.Checked = idx == settings.TeraTypeIndex;
+                    }
+                }
             }
             if (perfHudToolStripMenuItem != null)
             {
@@ -211,6 +233,9 @@ namespace TrinityModelViewer
             RenderOptions.UseJointInfoMatrices = false;
             RenderOptions.UseRareTrmtrMaterials = settings.UseRareTrmtrMaterials;
             RenderOptions.UseBackupIkCharacterShader = settings.UseBackupIkCharacterShader;
+            RenderOptions.EnableTeraEffect = settings.EnableTeraEffect;
+            RenderOptions.TeraColor = ResolveTeraColor(settings.TeraTypeIndex);
+            RenderOptions.TeraStrength = 1.0f;
             RenderOptions.ShaderGame = ParseShaderGameSetting(settings.ShaderGame);
             RenderOptions.ShaderDebugMode = settings.ShaderDebugMode;
             RenderOptions.EnablePerfHud = settings.EnablePerfHud;
@@ -222,7 +247,186 @@ namespace TrinityModelViewer
             var display = ResolveGBufferDisplay(settings);
             renderCtrl.renderer.SetGBufferDisplayMode(display);
             renderCtrl.renderer.SetSkeletonVisible(settings.ShowSkeleton);
+            SyncTeraPtclEffects();
             renderCtrl.Invalidate();
+        }
+
+        private void SyncTeraPtclEffects()
+        {
+            // Rebuild attachments when toggling or changing type.
+            // This is intentionally conservative; PTCL parsing + texture upload happens in Setup().
+            if (!settings.EnableTeraEffect)
+            {
+                ClearTeraPtclEffects();
+                return;
+            }
+
+            var root = GFTool.Renderer.Scene.SceneGraph.Instance.GetRoot();
+            if (root == null)
+            {
+                return;
+            }
+
+            var svRoot = settings.SvExtractedOutRoot?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(svRoot) || !System.IO.Directory.Exists(svRoot))
+            {
+                // Keep the shader overlay working even if particle assets are missing.
+                if (teraPtclByModel.Count == 0)
+                {
+                    GFTool.Renderer.Core.MessageHandler.Instance.AddMessage(
+                        GFTool.Renderer.Core.MessageType.WARNING,
+                        "[Tera] SV extracted root not set; PTCL particles disabled.");
+                }
+                return;
+            }
+
+            int idx = Math.Clamp(settings.TeraTypeIndex, 0, 99);
+            if (idx != lastTeraPtclTypeIndex || !string.Equals(svRoot, lastTeraPtclSvRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearTeraPtclEffects();
+                lastTeraPtclTypeIndex = idx;
+                lastTeraPtclSvRoot = svRoot;
+            }
+            string folder = System.IO.Path.Combine(svRoot, "effect", "battle_ej", $"ej_{idx:00}");
+            string crown = System.IO.Path.Combine(folder, $"ej_crown{idx:00}.ptcl");
+            string prism = System.IO.Path.Combine(folder, $"ej_prism{idx:00}.ptcl");
+            string trsot0 = System.IO.Path.Combine(folder, $"ej_{idx:00}_0.trsot");
+            string trsot1 = System.IO.Path.Combine(folder, $"ej_{idx:00}_1.trsot");
+            string trsot = System.IO.File.Exists(trsot0) ? trsot0 : trsot1;
+
+            // Attach to all loaded models (unless hidden).
+            foreach (var kv in sceneModelManager.ModelSourcePaths)
+            {
+                var model = kv.Key;
+                if (model == null || sceneModelManager.IsHidden(model))
+                {
+                    continue;
+                }
+
+                if (teraPtclByModel.TryGetValue(model, out var existing))
+                {
+                    continue;
+                }
+
+                var attachment = new GFTool.Renderer.Scene.GraphicsObjects.Particles.TeraPtclAttachment(model, crown, prism, trsot);
+                TryApplyGemArraySettings(model, idx, attachment);
+                teraPtclByModel[model] = attachment;
+                root.AddChild(attachment);
+            }
+        }
+
+        private void TryApplyGemArraySettings(GFTool.Renderer.Scene.GraphicsObjects.Model model, int gemTypeIndex, GFTool.Renderer.Scene.GraphicsObjects.Particles.TeraPtclAttachment attachment)
+        {
+            if (model == null || attachment == null)
+            {
+                return;
+            }
+
+            int species = 0;
+            int form = 0;
+            string name = model.Name ?? string.Empty;
+            // Expected: pm####_aa_bb
+            if (name.StartsWith("pm", StringComparison.OrdinalIgnoreCase) && name.Length >= 6)
+            {
+                int.TryParse(name.Substring(2, 4), out species);
+                var parts = name.Split('_');
+                if (parts.Length >= 3)
+                {
+                    int.TryParse(parts[1], out form);
+                }
+            }
+
+            if (species <= 0)
+            {
+                return;
+            }
+
+            var svRoot = settings.SvExtractedOutRoot?.Trim() ?? string.Empty;
+            if (!gemArrayResolver.TryGetSettings(svRoot, species, form, gemTypeIndex, out var s, out var dbg))
+            {
+                if (settings.DebugLogs && !string.IsNullOrWhiteSpace(dbg))
+                {
+                    GFTool.Renderer.Core.MessageHandler.Instance.AddMessage(GFTool.Renderer.Core.MessageType.LOG, $"[Tera] gem_array: pm{species:0000} form={form} type={gemTypeIndex} {dbg}");
+                }
+                return;
+            }
+
+            var modelOffset = new OpenTK.Mathematics.Vector3(s.ModelOffsetPos[0], s.ModelOffsetPos[1], s.ModelOffsetPos[2]);
+            var effectOffset = new OpenTK.Mathematics.Vector3(s.EffectOffsetPos[0], s.EffectOffsetPos[1], s.EffectOffsetPos[2]);
+            var modelEulerDeg = new OpenTK.Mathematics.Vector3(s.ModelEulerAnglesDeg[0], s.ModelEulerAnglesDeg[1], s.ModelEulerAnglesDeg[2]);
+            var effectEulerDeg = new OpenTK.Mathematics.Vector3(s.EffectEulerAnglesDeg[0], s.EffectEulerAnglesDeg[1], s.EffectEulerAnglesDeg[2]);
+
+            attachment.ApplyGemSettings(
+                modelLocatorBoneName: s.ModelLocator,
+                modelScale: s.ModelScale,
+                modelOffset: modelOffset,
+                modelEulerAnglesDeg: modelEulerDeg,
+                effectLocatorBoneName: s.EffectLocator,
+                effectScale: s.EffectScale,
+                effectOffset: effectOffset,
+                effectEulerAnglesDeg: effectEulerDeg);
+        }
+
+        private void ClearTeraPtclEffects()
+        {
+            var root = GFTool.Renderer.Scene.SceneGraph.Instance.GetRoot();
+            if (root == null)
+            {
+                teraPtclByModel.Clear();
+                lastTeraPtclTypeIndex = -1;
+                lastTeraPtclSvRoot = string.Empty;
+                return;
+            }
+
+            foreach (var kv in teraPtclByModel)
+            {
+                var attachment = kv.Value;
+                try
+                {
+                    root.children.Remove(attachment);
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    attachment.Dispose();
+                }
+                catch
+                {
+                }
+            }
+
+            teraPtclByModel.Clear();
+            lastTeraPtclTypeIndex = -1;
+            lastTeraPtclSvRoot = string.Empty;
+        }
+
+        private static OpenTK.Mathematics.Vector3 ResolveTeraColor(int typeIndex)
+        {
+            return typeIndex switch
+            {
+                0 => new OpenTK.Mathematics.Vector3(0.82f, 0.82f, 0.78f),
+                1 => new OpenTK.Mathematics.Vector3(0.78f, 0.25f, 0.23f),
+                2 => new OpenTK.Mathematics.Vector3(0.35f, 0.56f, 0.87f),
+                3 => new OpenTK.Mathematics.Vector3(0.62f, 0.31f, 0.68f),
+                4 => new OpenTK.Mathematics.Vector3(0.74f, 0.56f, 0.18f),
+                5 => new OpenTK.Mathematics.Vector3(0.70f, 0.56f, 0.31f),
+                6 => new OpenTK.Mathematics.Vector3(0.64f, 0.73f, 0.19f),
+                7 => new OpenTK.Mathematics.Vector3(0.45f, 0.35f, 0.67f),
+                8 => new OpenTK.Mathematics.Vector3(0.72f, 0.72f, 0.80f),
+                9 => new OpenTK.Mathematics.Vector3(0.91f, 0.33f, 0.21f),
+                10 => new OpenTK.Mathematics.Vector3(0.25f, 0.56f, 0.86f),
+                11 => new OpenTK.Mathematics.Vector3(0.38f, 0.74f, 0.29f),
+                12 => new OpenTK.Mathematics.Vector3(0.97f, 0.82f, 0.24f),
+                13 => new OpenTK.Mathematics.Vector3(0.96f, 0.36f, 0.58f),
+                14 => new OpenTK.Mathematics.Vector3(0.49f, 0.82f, 0.91f),
+                15 => new OpenTK.Mathematics.Vector3(0.42f, 0.35f, 0.89f),
+                16 => new OpenTK.Mathematics.Vector3(0.35f, 0.35f, 0.41f),
+                17 => new OpenTK.Mathematics.Vector3(0.93f, 0.58f, 0.78f),
+                _ => new OpenTK.Mathematics.Vector3(0.82f, 0.82f, 0.78f)
+            };
         }
 
         private static string ResolveActiveExtractedOutRoot(ViewerSettings settings)
@@ -254,6 +458,7 @@ namespace TrinityModelViewer
                 "Specular" => GBuffer.DisplayType.DISPLAY_SPECULAR,
                 "AO" => GBuffer.DisplayType.DISPLAY_AO,
                 "Depth" => GBuffer.DisplayType.DISPLAY_DEPTH,
+                "Emission" => GBuffer.DisplayType.DISPLAY_EMISSION,
                 _ => settings.DisplayShading == ViewerSettings.ShadingMode.Toon
                     ? GBuffer.DisplayType.DISPLAY_TOON
                     : settings.DisplayShading == ViewerSettings.ShadingMode.Legacy
@@ -415,6 +620,15 @@ namespace TrinityModelViewer
         private void displayDepthToolStripMenuItem_Click(object sender, EventArgs e)
         {
             settings.DisplayBuffer = "Depth";
+            settings.DisplayShading = ViewerSettings.ShadingMode.Lit;
+            settings.Save();
+            ApplyRenderSettingsToMenu();
+            ApplyRenderSettings();
+        }
+
+        private void displayEmissionToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            settings.DisplayBuffer = "Emission";
             settings.DisplayShading = ViewerSettings.ShadingMode.Lit;
             settings.Save();
             ApplyRenderSettingsToMenu();

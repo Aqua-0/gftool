@@ -32,7 +32,11 @@ namespace TrinitySceneView
             menuStrip1 = new MenuStrip();
             fileToolStripMenuItem = new ToolStripMenuItem();
             openTRSOT = new ToolStripMenuItem();
+            assetsToolStripMenuItem = new ToolStripMenuItem();
+            sceneToolStripMenuItem = new ToolStripMenuItem();
+            previewToolStripMenuItem = new ToolStripMenuItem();
             viewToolStripMenuItem = new ToolStripMenuItem();
+            resetCameraToOriginToolStripMenuItem = new ToolStripMenuItem();
             toolStripMenuItem1 = new ToolStripMenuItem();
             toolstripGBuf_All = new ToolStripMenuItem();
             toolstripGBuf_Albedo = new ToolStripMenuItem();
@@ -60,6 +64,23 @@ namespace TrinitySceneView
             modelsListView = new ListView();
             columnHeaderModelName = new ColumnHeader();
             columnHeaderModelPath = new ColumnHeader();
+            tabSpawns = new TabPage();
+            spawnerLookupPanel = new Panel();
+            spawnerLookupTextBox = new TextBox();
+            btnListSceneSpawners = new Button();
+            sceneSpawnerComboBox = new ComboBox();
+            btnLookupSpawner = new Button();
+            btnSpawnCandidate = new Button();
+            spawnerCandidatesListView = new ListView();
+            columnHeaderSpawnerAssetId = new ColumnHeader();
+            columnHeaderSpawnerAppearanceId = new ColumnHeader();
+            columnHeaderSpawnerObjectTemplateId = new ColumnHeader();
+            columnHeaderSpawnerTemplatePath = new ColumnHeader();
+            columnHeaderSpawnerPriority = new ColumnHeader();
+            columnHeaderSpawnerConditions = new ColumnHeader();
+            columnHeaderSpawnerSource = new ColumnHeader();
+            spawnerCandidateDetailsTextBox = new TextBox();
+            loadingProgressBar = new ProgressBar();
             menuStrip1.SuspendLayout();
             sceneContext.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)splitContainerOuter).BeginInit();
@@ -82,11 +103,13 @@ namespace TrinitySceneView
             splitContainerProperties.Panel2.SuspendLayout();
             splitContainerProperties.SuspendLayout();
             tabModels.SuspendLayout();
+            tabSpawns.SuspendLayout();
+            spawnerLookupPanel.SuspendLayout();
             SuspendLayout();
             //
             // menuStrip1
             //
-            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, viewToolStripMenuItem });
+            menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem, assetsToolStripMenuItem, sceneToolStripMenuItem, previewToolStripMenuItem, viewToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Size = new Size(1659, 24);
@@ -100,6 +123,24 @@ namespace TrinitySceneView
             fileToolStripMenuItem.Size = new Size(37, 20);
             fileToolStripMenuItem.Text = "File";
             //
+            // assetsToolStripMenuItem
+            //
+            assetsToolStripMenuItem.Name = "assetsToolStripMenuItem";
+            assetsToolStripMenuItem.Size = new Size(52, 20);
+            assetsToolStripMenuItem.Text = "Assets";
+            //
+            // sceneToolStripMenuItem
+            //
+            sceneToolStripMenuItem.Name = "sceneToolStripMenuItem";
+            sceneToolStripMenuItem.Size = new Size(49, 20);
+            sceneToolStripMenuItem.Text = "Scene";
+            //
+            // previewToolStripMenuItem
+            //
+            previewToolStripMenuItem.Name = "previewToolStripMenuItem";
+            previewToolStripMenuItem.Size = new Size(60, 20);
+            previewToolStripMenuItem.Text = "Preview";
+            //
             // openTRSOT
             //
             openTRSOT.Name = "openTRSOT";
@@ -109,10 +150,18 @@ namespace TrinitySceneView
             //
             // viewToolStripMenuItem
             //
-            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { toolStripMenuItem1 });
+            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { resetCameraToOriginToolStripMenuItem, toolStripMenuItem1 });
             viewToolStripMenuItem.Name = "viewToolStripMenuItem";
             viewToolStripMenuItem.Size = new Size(44, 20);
             viewToolStripMenuItem.Text = "View";
+            //
+            // resetCameraToOriginToolStripMenuItem
+            //
+            resetCameraToOriginToolStripMenuItem.Name = "resetCameraToOriginToolStripMenuItem";
+            resetCameraToOriginToolStripMenuItem.ShortcutKeyDisplayString = "Home";
+            resetCameraToOriginToolStripMenuItem.Size = new Size(220, 22);
+            resetCameraToOriginToolStripMenuItem.Text = "Reset camera to origin";
+            resetCameraToOriginToolStripMenuItem.Click += resetCameraToOriginToolStripMenuItem_Click;
             //
             // toolStripMenuItem1
             //
@@ -283,6 +332,7 @@ namespace TrinitySceneView
             // bottomPanel
             //
             bottomPanel.Controls.Add(messageListView);
+            bottomPanel.Controls.Add(loadingProgressBar);
             bottomPanel.Controls.Add(statusLbl);
             bottomPanel.Dock = DockStyle.Fill;
             bottomPanel.Location = new Point(0, 0);
@@ -290,10 +340,21 @@ namespace TrinitySceneView
             bottomPanel.Size = new Size(1108, 173);
             bottomPanel.TabIndex = 0;
             //
+            // loadingProgressBar
+            //
+            loadingProgressBar.Dock = DockStyle.Top;
+            loadingProgressBar.Location = new Point(0, 14);
+            loadingProgressBar.Name = "loadingProgressBar";
+            loadingProgressBar.Size = new Size(1108, 12);
+            loadingProgressBar.Style = ProgressBarStyle.Continuous;
+            loadingProgressBar.TabIndex = 5;
+            loadingProgressBar.Visible = false;
+            //
             // rightTabs
             //
             rightTabs.Controls.Add(tabProperties);
             rightTabs.Controls.Add(tabModels);
+            rightTabs.Controls.Add(tabSpawns);
             rightTabs.Dock = DockStyle.Fill;
             rightTabs.Location = new Point(0, 0);
             rightTabs.Name = "rightTabs";
@@ -343,6 +404,145 @@ namespace TrinitySceneView
             tabModels.TabIndex = 1;
             tabModels.Text = "Models";
             tabModels.UseVisualStyleBackColor = true;
+            //
+            // tabSpawns
+            //
+            tabSpawns.Controls.Add(spawnerCandidatesListView);
+            tabSpawns.Controls.Add(spawnerCandidateDetailsTextBox);
+            tabSpawns.Controls.Add(spawnerLookupPanel);
+            tabSpawns.Location = new Point(4, 24);
+            tabSpawns.Name = "tabSpawns";
+            tabSpawns.Padding = new Padding(3);
+            tabSpawns.Size = new Size(294, 869);
+            tabSpawns.TabIndex = 2;
+            tabSpawns.Text = "NPCs";
+            tabSpawns.UseVisualStyleBackColor = true;
+            //
+            // spawnerLookupPanel
+            //
+            spawnerLookupPanel.Controls.Add(btnSpawnCandidate);
+            spawnerLookupPanel.Controls.Add(btnLookupSpawner);
+            spawnerLookupPanel.Controls.Add(btnListSceneSpawners);
+            spawnerLookupPanel.Controls.Add(sceneSpawnerComboBox);
+            spawnerLookupPanel.Controls.Add(spawnerLookupTextBox);
+            spawnerLookupPanel.Dock = DockStyle.Top;
+            spawnerLookupPanel.Location = new Point(3, 3);
+            spawnerLookupPanel.Name = "spawnerLookupPanel";
+            spawnerLookupPanel.Size = new Size(288, 88);
+            spawnerLookupPanel.TabIndex = 0;
+            //
+            // spawnerLookupTextBox
+            //
+            spawnerLookupTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            spawnerLookupTextBox.Location = new Point(6, 6);
+            spawnerLookupTextBox.Name = "spawnerLookupTextBox";
+            spawnerLookupTextBox.PlaceholderText = "spawner id (e.g. npc_talk_A03_02_05_0006_010)";
+            spawnerLookupTextBox.Size = new Size(276, 23);
+            spawnerLookupTextBox.TabIndex = 0;
+            //
+            // sceneSpawnerComboBox
+            //
+            sceneSpawnerComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            sceneSpawnerComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            sceneSpawnerComboBox.FormattingEnabled = true;
+            sceneSpawnerComboBox.Location = new Point(6, 32);
+            sceneSpawnerComboBox.Name = "sceneSpawnerComboBox";
+            sceneSpawnerComboBox.Size = new Size(276, 23);
+            sceneSpawnerComboBox.TabIndex = 1;
+            sceneSpawnerComboBox.SelectedIndexChanged += sceneSpawnerComboBox_SelectedIndexChanged;
+            //
+            // btnListSceneSpawners
+            //
+            btnListSceneSpawners.Location = new Point(6, 60);
+            btnListSceneSpawners.Name = "btnListSceneSpawners";
+            btnListSceneSpawners.Size = new Size(132, 23);
+            btnListSceneSpawners.TabIndex = 2;
+            btnListSceneSpawners.Text = "From loaded scene";
+            btnListSceneSpawners.UseVisualStyleBackColor = true;
+            btnListSceneSpawners.Click += btnListSceneSpawners_Click;
+            //
+            // btnLookupSpawner
+            //
+            btnLookupSpawner.Location = new Point(6, 60);
+            btnLookupSpawner.Name = "btnLookupSpawner";
+            btnLookupSpawner.Size = new Size(132, 23);
+            btnLookupSpawner.TabIndex = 3;
+            btnLookupSpawner.Text = "List candidates";
+            btnLookupSpawner.UseVisualStyleBackColor = true;
+            btnLookupSpawner.Click += btnLookupSpawner_Click;
+            //
+            // btnSpawnCandidate
+            //
+            btnSpawnCandidate.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnSpawnCandidate.Location = new Point(150, 60);
+            btnSpawnCandidate.Name = "btnSpawnCandidate";
+            btnSpawnCandidate.Size = new Size(132, 23);
+            btnSpawnCandidate.TabIndex = 4;
+            btnSpawnCandidate.Text = "Spawn selected";
+            btnSpawnCandidate.UseVisualStyleBackColor = true;
+            btnSpawnCandidate.Click += btnSpawnCandidate_Click;
+            //
+            // spawnerCandidatesListView
+            //
+            spawnerCandidatesListView.Columns.AddRange(new ColumnHeader[] { columnHeaderSpawnerAssetId, columnHeaderSpawnerAppearanceId, columnHeaderSpawnerObjectTemplateId, columnHeaderSpawnerTemplatePath, columnHeaderSpawnerPriority, columnHeaderSpawnerConditions, columnHeaderSpawnerSource });
+            spawnerCandidatesListView.Dock = DockStyle.Fill;
+            spawnerCandidatesListView.FullRowSelect = true;
+            spawnerCandidatesListView.GridLines = true;
+            spawnerCandidatesListView.HideSelection = false;
+            spawnerCandidatesListView.Location = new Point(3, 91);
+            spawnerCandidatesListView.MultiSelect = false;
+            spawnerCandidatesListView.Name = "spawnerCandidatesListView";
+            spawnerCandidatesListView.Size = new Size(288, 648);
+            spawnerCandidatesListView.TabIndex = 1;
+            spawnerCandidatesListView.UseCompatibleStateImageBehavior = false;
+            spawnerCandidatesListView.View = View.Details;
+            spawnerCandidatesListView.SelectedIndexChanged += spawnerCandidatesListView_SelectedIndexChanged;
+            //
+            // columnHeaderSpawnerAssetId
+            //
+            columnHeaderSpawnerAssetId.Text = "assetId";
+            columnHeaderSpawnerAssetId.Width = 90;
+            //
+            // columnHeaderSpawnerAppearanceId
+            //
+            columnHeaderSpawnerAppearanceId.Text = "appearanceId";
+            columnHeaderSpawnerAppearanceId.Width = 90;
+            //
+            // columnHeaderSpawnerObjectTemplateId
+            //
+            columnHeaderSpawnerObjectTemplateId.Text = "objectTemplateId";
+            columnHeaderSpawnerObjectTemplateId.Width = 110;
+            //
+            // columnHeaderSpawnerTemplatePath
+            //
+            columnHeaderSpawnerTemplatePath.Text = "template";
+            columnHeaderSpawnerTemplatePath.Width = 160;
+            //
+            // columnHeaderSpawnerPriority
+            //
+            columnHeaderSpawnerPriority.Text = "prio";
+            columnHeaderSpawnerPriority.Width = 45;
+            //
+            // columnHeaderSpawnerConditions
+            //
+            columnHeaderSpawnerConditions.Text = "conds";
+            columnHeaderSpawnerConditions.Width = 55;
+            //
+            // columnHeaderSpawnerSource
+            //
+            columnHeaderSpawnerSource.Text = "src";
+            columnHeaderSpawnerSource.Width = 55;
+            //
+            // spawnerCandidateDetailsTextBox
+            //
+            spawnerCandidateDetailsTextBox.Dock = DockStyle.Bottom;
+            spawnerCandidateDetailsTextBox.Location = new Point(3, 739);
+            spawnerCandidateDetailsTextBox.Multiline = true;
+            spawnerCandidateDetailsTextBox.Name = "spawnerCandidateDetailsTextBox";
+            spawnerCandidateDetailsTextBox.ReadOnly = true;
+            spawnerCandidateDetailsTextBox.ScrollBars = ScrollBars.Vertical;
+            spawnerCandidateDetailsTextBox.Size = new Size(288, 127);
+            spawnerCandidateDetailsTextBox.TabIndex = 2;
             //
             // modelsListView
             //
@@ -404,6 +604,10 @@ namespace TrinitySceneView
             ((System.ComponentModel.ISupportInitialize)splitContainerProperties).EndInit();
             splitContainerProperties.ResumeLayout(false);
             tabModels.ResumeLayout(false);
+            tabSpawns.ResumeLayout(false);
+            tabSpawns.PerformLayout();
+            spawnerLookupPanel.ResumeLayout(false);
+            spawnerLookupPanel.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -413,11 +617,15 @@ namespace TrinitySceneView
         private MenuStrip menuStrip1;
         private ToolStripMenuItem fileToolStripMenuItem;
         private ToolStripMenuItem openTRSOT;
+        private ToolStripMenuItem assetsToolStripMenuItem;
+        private ToolStripMenuItem sceneToolStripMenuItem;
+        private ToolStripMenuItem previewToolStripMenuItem;
         private TreeView sceneView;
         private ContextMenuStrip sceneContext;
         private ToolStripMenuItem expandToolStripMenuItem;
         private Label statusLbl;
         private ToolStripMenuItem viewToolStripMenuItem;
+        private ToolStripMenuItem resetCameraToOriginToolStripMenuItem;
         private ToolStripMenuItem toolStripMenuItem1;
         private ToolStripMenuItem toolstripGBuf_All;
         private ToolStripMenuItem toolstripGBuf_Albedo;
@@ -436,10 +644,27 @@ namespace TrinitySceneView
         private TabControl rightTabs;
         private TabPage tabProperties;
         private TabPage tabModels;
+        private TabPage tabSpawns;
         private SplitContainer splitContainerProperties;
         private PropertyGrid propertyGrid;
         private ListView modelsListView;
         private ColumnHeader columnHeaderModelName;
         private ColumnHeader columnHeaderModelPath;
+        private Panel spawnerLookupPanel;
+        private TextBox spawnerLookupTextBox;
+        private Button btnListSceneSpawners;
+        private ComboBox sceneSpawnerComboBox;
+        private Button btnLookupSpawner;
+        private Button btnSpawnCandidate;
+        private ListView spawnerCandidatesListView;
+        private ColumnHeader columnHeaderSpawnerAssetId;
+        private ColumnHeader columnHeaderSpawnerAppearanceId;
+        private ColumnHeader columnHeaderSpawnerObjectTemplateId;
+        private ColumnHeader columnHeaderSpawnerTemplatePath;
+        private ColumnHeader columnHeaderSpawnerPriority;
+        private ColumnHeader columnHeaderSpawnerConditions;
+        private ColumnHeader columnHeaderSpawnerSource;
+        private TextBox spawnerCandidateDetailsTextBox;
+        private ProgressBar loadingProgressBar;
     }
 }
