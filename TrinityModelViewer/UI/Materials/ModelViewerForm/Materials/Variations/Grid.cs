@@ -264,6 +264,14 @@ namespace TrinityModelViewer
                 return;
             }
 
+            var graphics = e.Graphics;
+            if (graphics == null)
+            {
+                return;
+            }
+
+            var font = e.CellStyle?.Font ?? materialVariationsGrid.Font;
+            var foreColor = e.CellStyle?.ForeColor ?? materialVariationsGrid.ForeColor;
             var col = materialVariationsGrid.Columns[e.ColumnIndex];
             if (!string.Equals(col.Name, "ParamValue", StringComparison.OrdinalIgnoreCase))
             {
@@ -306,20 +314,20 @@ namespace TrinityModelViewer
                 var swatchRect = new Rectangle(bounds.Left + pad, bounds.Top + (bounds.Height - size) / 2, size, size);
                 using (var b = new SolidBrush(swatchColor))
                 {
-                    e.Graphics.FillRectangle(b, swatchRect);
+                    graphics.FillRectangle(b, swatchRect);
                 }
                 using (var p = new Pen(Color.FromArgb(120, 0, 0, 0)))
                 {
-                    e.Graphics.DrawRectangle(p, swatchRect);
+                    graphics.DrawRectangle(p, swatchRect);
                 }
 
                 var textRect = new Rectangle(swatchRect.Right + 6, bounds.Top, bounds.Width - (swatchRect.Width + 12), bounds.Height);
                 TextRenderer.DrawText(
-                    e.Graphics,
+                    graphics,
                     Convert.ToString(e.FormattedValue, CultureInfo.InvariantCulture) ?? string.Empty,
-                    e.CellStyle.Font,
+                    font,
                     textRect,
-                    e.CellStyle.ForeColor,
+                    foreColor,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
 
                 e.Handled = true;
@@ -355,9 +363,9 @@ namespace TrinityModelViewer
                        materialsEditorService.ClampToByte(vv.Y),
                        materialsEditorService.ClampToByte(vv.Z))))
             {
-                e.Graphics.FillRectangle(brush, swatchRect2);
+                graphics.FillRectangle(brush, swatchRect2);
             }
-            e.Graphics.DrawRectangle(Pens.Black, swatchRect2);
+            graphics.DrawRectangle(Pens.Black, swatchRect2);
 
             var textRect2 = new Rectangle(
                 e.CellBounds.Left + width,
@@ -366,11 +374,11 @@ namespace TrinityModelViewer
                 e.CellBounds.Height);
 
             TextRenderer.DrawText(
-                e.Graphics,
+                graphics,
                 text,
-                e.CellStyle.Font,
+                font,
                 textRect2,
-                e.CellStyle.ForeColor,
+                foreColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
             e.Handled = true;

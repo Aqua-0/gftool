@@ -51,7 +51,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
             public int ParentIndex { get; set; }
             public bool Skinning { get; set; }
-            public Bone Parent;
+            public Bone? Parent;
             public List<Bone> Children;
 
             public Bone(TRTransformNode node, bool skinning)
@@ -73,7 +73,6 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 Skinning = skinning;
                 HasJointInverseBind = false;
                 UseSegmentScaleCompensate = false;
-                Parent = null;
                 Children = new List<Bone>();
             }
 

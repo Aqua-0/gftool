@@ -119,7 +119,10 @@ namespace TrinityFileExplorer
                 if (entry.EncryptionType != -1)
                     buffer = Oodle.Decompress(buffer, (long)entry.FileSize);
 
-                File.WriteAllBytes(filepath, buffer);
+                if (buffer != null)
+                {
+                    File.WriteAllBytes(filepath, buffer);
+                }
             }
         }
 

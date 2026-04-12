@@ -24,7 +24,7 @@ namespace Trinity.Core.Utils
 
         public static Quaternion Unpack(this PackedQuaternion pq)
         {
-            ulong pack = (ulong)(((ulong)pq.Z << 32) | ((ulong)pq.Y << 16) | pq.X);
+            ulong pack = ((ulong)pq.Z << 32) | ((ulong)pq.Y << 16) | pq.X;
             float q1 = ExpandFloat((pack >> 3) & 0x7FFF);
             float q2 = ExpandFloat((pack >> 18) & 0x7FFF);
             float q3 = ExpandFloat((pack >> 33) & 0x7FFF);
@@ -108,8 +108,8 @@ namespace Trinity.Core.Utils
                     break;
             }
 
-            ulong pack = ((ulong)tz << 30) | ((ulong)ty << 15) | (ulong)tx;
-            pack = (pack << 3) | ((ulong)(isNegative << 2) | (ulong)maxIndex);
+            ulong pack = ((ulong)(ushort)tz << 30) | ((ulong)(ushort)ty << 15) | (ulong)(ushort)tx;
+            pack = (pack << 3) | (((ulong)(byte)isNegative << 2) | (ulong)(ushort)maxIndex);
             uint x = (uint)(pack & 0xFFFF);
             uint y = (uint)((pack >> 16) & 0xFFFF);
             uint z = (uint)((pack >> 32) & 0xFFFF);

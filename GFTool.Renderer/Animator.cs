@@ -4,9 +4,7 @@ namespace GFTool.Renderer
 {
     public class Animator
     {
-        private Animation animation;
-        private float animTime;
-        private float step = 1;
+        private Animation? animation;
 
         public Animator() 
         { 
@@ -16,7 +14,6 @@ namespace GFTool.Renderer
         public void PlayAnim(Animation anim)
         { 
             animation = anim;
-            animTime = 0.0f;
         }
 
         public void StopAnim()

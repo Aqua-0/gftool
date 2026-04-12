@@ -15,7 +15,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 {
     public partial class Material : IDisposable
     {
-        public bool TryGetUniformOverride(string name, out object value)
+        public bool TryGetUniformOverride(string name, out object? value)
         {
             lock (overrideLock)
             {

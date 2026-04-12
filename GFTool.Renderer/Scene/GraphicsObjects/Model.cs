@@ -24,13 +24,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         private string? baseSkeletonCategoryHint;
         private readonly List<string> loadedMeshFiles = new List<string>();
 
-        public string Name { get; private set; }
+        public string Name { get; private set; } = string.Empty;
         private long lastAnimAllocPoseComputeBytes;
         private long lastAnimAllocWriteBackBytes;
 
-        private int[] VAOs;
-        private int[] VBOs;
-        private int[] EBOs;
+        private int[] VAOs = Array.Empty<int>();
+        private int[] VBOs = Array.Empty<int>();
+        private int[] EBOs = Array.Empty<int>();
 
         private List<Vector3[]> Positions = new List<Vector3[]>();
         private List<Vector3[]> Normals = new List<Vector3[]>();
@@ -52,7 +52,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         private List<bool> HasBinormals = new List<bool>();
         private List<bool> HasSkinning = new List<bool>();
 
-        private Material[] materials;
+        private Material[] materials = Array.Empty<Material>();
         private List<string> MaterialNames = new List<string>();
         private Dictionary<string, Material> materialMap = new Dictionary<string, Material>(StringComparer.OrdinalIgnoreCase);
         private List<string> SubmeshNames = new List<string>();
@@ -68,9 +68,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
         private Matrix4 modelMat;
         private int selectedSubmeshIndex = -1;
-        private BlendIndexStats blendIndexStats;
-        private int[] blendIndexOffsets;
-        private int[] blendIndexByteSizes;
+        private BlendIndexStats blendIndexStats = new BlendIndexStats();
+        private int[] blendIndexOffsets = Array.Empty<int>();
+        private int[] blendIndexByteSizes = Array.Empty<int>();
         private BlendIndexRemapMode[]? blendIndexRemapModes;
         private string? lastAnimSkinDebugName;
         public bool IsVisible { get; private set; } = true;
@@ -264,15 +264,15 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     existing?.Dispose();
                 }
             }
-            materials = null!;
+            materials = Array.Empty<Material>();
             materialMap.Clear();
 
             // Reset GPU setup so the renderer can re-upload buffers.
             gpuSetupComplete = false;
             gpuSetupIndex = -1;
-            VAOs = null!;
-            VBOs = null!;
-            EBOs = null!;
+            VAOs = Array.Empty<int>();
+            VBOs = Array.Empty<int>();
+            EBOs = Array.Empty<int>();
 
             var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(assetProvider.ReadAllBytes(trmdlPath));
 
@@ -537,9 +537,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             // Reset GPU setup so the renderer can re-upload buffers.
             gpuSetupComplete = false;
             gpuSetupIndex = -1;
-            VAOs = null!;
-            VBOs = null!;
-            EBOs = null!;
+            VAOs = Array.Empty<int>();
+            VBOs = Array.Empty<int>();
+            EBOs = Array.Empty<int>();
 
             foreach (var meshFile in loadedMeshFiles)
             {

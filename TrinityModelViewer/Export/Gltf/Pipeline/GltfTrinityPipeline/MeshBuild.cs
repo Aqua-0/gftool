@@ -701,7 +701,7 @@ namespace TrinityModelViewer.Export
                         MaxBound = new Vector3f { X = bounds.Max.X, Y = bounds.Max.Y, Z = bounds.Max.Z }
                     },
                     IndexType = meshShape.IndexType,
-                    vertexDeclaration = meshShape.vertexDeclaration,
+                    vertexDeclaration = meshShape.vertexDeclaration ?? Array.Empty<TRVertexDeclaration>(),
                     meshParts = outParts,
                     res0 = meshShape.res0,
                     res1 = meshShape.res1,
@@ -714,7 +714,7 @@ namespace TrinityModelViewer.Export
                         Z = (bounds.Min.Z + bounds.Max.Z) * 0.5f,
                         Radius = (bounds.Max - bounds.Min).Length * 0.5f
                     },
-                    boneWeight = outBoneWeights,
+                    boneWeight = outBoneWeights ?? Array.Empty<TRBoneWeight>(),
                     MeshUnk7 = meshShape.MeshUnk7,
                     MeshName = meshShape.MeshName
                 };

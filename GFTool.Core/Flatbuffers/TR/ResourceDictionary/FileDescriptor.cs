@@ -52,7 +52,7 @@ namespace Trinity.Core.Flatbuffers.TR.ResourceDictionary
 
         public virtual PackInfo? GetPackInfo(UInt64 hash)
         {
-            PackInfo ret = null;
+            PackInfo? ret = null;
             long ind = GetPackIndex(hash);
             if (ind >= 0)
             {

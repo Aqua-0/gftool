@@ -150,7 +150,10 @@ namespace TrinitySceneView.UI
                 return;
             }
 
-            var entry = (AssetEntry)listView.SelectedItems[0].Tag;
+            if (listView.SelectedItems[0].Tag is not AssetEntry entry)
+            {
+                return;
+            }
             SelectedEntry = entry;
             DialogResult = DialogResult.OK;
             Close();

@@ -483,7 +483,6 @@ namespace TrinityModLoader
         private ToolStripMenuItem markForLayeredFSToolStripMenuItem;
         private ToolStripMenuItem helpToolStripMenuItem;
         private ToolStripMenuItem aboutToolStripMenuItem;
-        private ToolStripMenuItem optionsToolStripMenuItem;
         private ContextMenuStrip listContext;
         private ToolStripMenuItem deleteModBut;
         private ToolStripMenuItem preferencesMenuItem;

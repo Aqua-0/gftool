@@ -141,7 +141,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             rotation = null;
             translation = null;
 
-            if (!TryGetTrack(boneName, out var track))
+            if (!TryGetTrack(boneName, out var track) || track == null)
             {
                 return false;
             }
@@ -157,11 +157,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             return TryGetTrack(boneName, out _);
         }
 
-        private bool TryGetTrack(string boneName, out BoneTrack track)
+        private bool TryGetTrack(string boneName, out BoneTrack? track)
         {
             if (string.IsNullOrWhiteSpace(boneName))
             {
-                track = default;
+                track = null;
                 return false;
             }
 
@@ -171,7 +171,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
             if (missingTracks.Contains(boneName))
             {
-                track = default;
+                track = null;
                 return false;
             }
 
@@ -193,7 +193,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     return true;
                 }
 
-                track = default;
+                track = null;
                 missingTracks.Add(boneName);
                 return false;
             }
@@ -205,7 +205,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 return true;
             }
 
-            track = default;
+            track = null;
             missingTracks.Add(boneName);
             return false;
         }

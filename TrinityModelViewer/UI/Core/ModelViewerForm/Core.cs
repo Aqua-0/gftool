@@ -58,32 +58,32 @@ namespace TrinityModelViewer
             if (aoUv1ContextMenuItem != null) aoUv1ContextMenuItem.Checked = aoOverride == UvSetOverride.Uv1;
         }
 
-        private void layerMaskUvMaterialToolStripMenuItem_Click(object sender, EventArgs e)
+        private void layerMaskUvMaterialToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshLayerMaskUvOverride(UvSetOverride.Material);
         }
 
-        private void layerMaskUv0ToolStripMenuItem_Click(object sender, EventArgs e)
+        private void layerMaskUv0ToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshLayerMaskUvOverride(UvSetOverride.Uv0);
         }
 
-        private void layerMaskUv1ToolStripMenuItem_Click(object sender, EventArgs e)
+        private void layerMaskUv1ToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshLayerMaskUvOverride(UvSetOverride.Uv1);
         }
 
-        private void aoUvMaterialToolStripMenuItem_Click(object sender, EventArgs e)
+        private void aoUvMaterialToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshAOUvOverride(UvSetOverride.Material);
         }
 
-        private void aoUv0ToolStripMenuItem_Click(object sender, EventArgs e)
+        private void aoUv0ToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshAOUvOverride(UvSetOverride.Uv0);
         }
 
-        private void aoUv1ToolStripMenuItem_Click(object sender, EventArgs e)
+        private void aoUv1ToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             SetMeshAOUvOverride(UvSetOverride.Uv1);
         }

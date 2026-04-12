@@ -73,8 +73,9 @@ namespace TrinityModelViewer.Export
                 Skin = skinIndex
             });
 
-            gltf.Nodes[rootNodeIndex].Children ??= new List<int>();
-            gltf.Nodes[rootNodeIndex].Children.Add(nodeIndex);
+            var rootNode = gltf.Nodes[rootNodeIndex];
+            rootNode.Children ??= new List<int>();
+            rootNode.Children.Add(nodeIndex);
         }
 
         private static (int skinIndex, int[] boneNodeIndices) AddSkin(GltfRoot gltf, BinaryBufferBuilder buffer, Armature armature, int rootNodeIndex)
@@ -102,11 +103,15 @@ namespace TrinityModelViewer.Export
                 int parent = armature.Bones[i].ParentIndex;
                 if (parent >= 0 && parent < boneCount && parent != i)
                 {
-                    gltf.Nodes[boneNodeIndices[parent]].Children!.Add(boneNodeIndices[i]);
+                    var parentNode = gltf.Nodes[boneNodeIndices[parent]];
+                    parentNode.Children ??= new List<int>();
+                    parentNode.Children.Add(boneNodeIndices[i]);
                 }
                 else
                 {
-                    gltf.Nodes[rootNodeIndex].Children!.Add(boneNodeIndices[i]);
+                    var rootNode = gltf.Nodes[rootNodeIndex];
+                    rootNode.Children ??= new List<int>();
+                    rootNode.Children.Add(boneNodeIndices[i]);
                 }
             }
 

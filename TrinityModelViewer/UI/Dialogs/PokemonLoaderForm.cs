@@ -857,7 +857,12 @@ namespace TrinityModelViewer.UI.Dialogs
             var rows = new List<PokemonRow>(catalog.Table.Length);
             foreach (var entry in catalog.Table)
             {
-                var info = entry?.SpeciesInfo;
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                var info = entry.SpeciesInfo;
                 if (info == null)
                 {
                     continue;
@@ -1065,7 +1070,7 @@ namespace TrinityModelViewer.UI.Dialogs
                     continue;
                 }
 
-                Span<ushort> codes = len <= 2048 ? stackalloc ushort[len] : new ushort[len];
+                Span<ushort> codes = new ushort[len];
                 for (int i = 0; i < len; i++)
                 {
                     codes[i] = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(start + i * 2, 2));

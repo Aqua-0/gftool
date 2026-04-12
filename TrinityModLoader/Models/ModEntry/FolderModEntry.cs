@@ -5,8 +5,8 @@ namespace TrinityModLoader.Models.ModEntry
 {
     public class FolderModEntry : IModEntry
     {
-        public string ModPath { get; set; }
-        public string URL { get; set; }
+        public string ModPath { get; set; } = string.Empty;
+        public string URL { get; set; } = string.Empty;
         public bool IsEnabled { get; set; }
 
         public IEnumerable<string> WalkDirectory(string directoryPath)

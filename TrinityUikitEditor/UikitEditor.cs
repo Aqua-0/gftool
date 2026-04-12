@@ -4,7 +4,7 @@ namespace TrinityUikitEditor
 {
     public partial class UikitEditor : Form
     {
-        private TRUiView uiView;
+        private TRUiView? uiView;
 
         public UikitEditor()
         {
@@ -29,7 +29,7 @@ namespace TrinityUikitEditor
         private void sceneView_MouseUp(object sender, MouseEventArgs e)
         {
             Point ClickPoint = new Point(e.X, e.Y);
-            TreeNode ClickNode = sceneView.GetNodeAt(ClickPoint);
+            TreeNode? ClickNode = sceneView.GetNodeAt(ClickPoint);
             sceneView.SelectedNode = ClickNode;
             if (ClickNode == null) return;
 
@@ -41,14 +41,20 @@ namespace TrinityUikitEditor
             }
 
             //Check for data to display
-            var meta = uiView.GetNodeMeta(sceneView.SelectedNode);
-            if (meta == null || meta?.Data == null)
+            if (uiView == null)
             {
                 ClearProperties();
                 return;
             }
 
-            InfoBox.Text = TRUiViewProperties.GetProperties(meta?.Type, meta?.Data);
+            var meta = uiView.GetNodeMeta(sceneView.SelectedNode);
+            if (!meta.HasValue || meta.Value.Data == null)
+            {
+                ClearProperties();
+                return;
+            }
+
+            InfoBox.Text = TRUiViewProperties.GetProperties(meta.Value.Type, meta.Value.Data);
         }
     }
 }

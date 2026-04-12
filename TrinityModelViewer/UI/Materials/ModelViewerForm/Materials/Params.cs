@@ -175,6 +175,15 @@ namespace TrinityModelViewer
                 return;
             }
 
+            var graphics = e.Graphics;
+            if (graphics == null)
+            {
+                return;
+            }
+
+            var font = e.CellStyle?.Font ?? materialParamsGrid.Font;
+            var foreColor = e.CellStyle?.ForeColor ?? materialParamsGrid.ForeColor;
+
             if (!string.Equals(materialParamsGrid.Columns[e.ColumnIndex].Name, "ParamValue", StringComparison.OrdinalIgnoreCase))
             {
                 return;
@@ -218,9 +227,9 @@ namespace TrinityModelViewer
 
                 using (var brush = new SolidBrush(ColorFromLinearRgb(new Vector3(layerColor.X, layerColor.Y, layerColor.Z))))
                 {
-                    e.Graphics.FillRectangle(brush, indexSwatchRect);
+                    graphics.FillRectangle(brush, indexSwatchRect);
                 }
-                e.Graphics.DrawRectangle(Pens.Black, indexSwatchRect);
+                graphics.DrawRectangle(Pens.Black, indexSwatchRect);
 
                 var displayTextRect = new Rectangle(
                     e.CellBounds.Left + indexSwatchWidth,
@@ -229,11 +238,11 @@ namespace TrinityModelViewer
                     e.CellBounds.Height);
 
                 TextRenderer.DrawText(
-                    e.Graphics,
+                    graphics,
                     displayText,
-                    e.CellStyle.Font,
+                    font,
                     displayTextRect,
-                    e.CellStyle.ForeColor,
+                    foreColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
                 e.Handled = true;
@@ -268,9 +277,9 @@ namespace TrinityModelViewer
                            materialsEditorService.ClampToByte(v.Y),
                            materialsEditorService.ClampToByte(v.Z))))
                 {
-                    e.Graphics.FillRectangle(brush, swatchRect);
+                    graphics.FillRectangle(brush, swatchRect);
                 }
-            e.Graphics.DrawRectangle(Pens.Black, swatchRect);
+            graphics.DrawRectangle(Pens.Black, swatchRect);
 
             var textRect = new Rectangle(
                 e.CellBounds.Left + swatchWidth,
@@ -279,11 +288,11 @@ namespace TrinityModelViewer
                 e.CellBounds.Height);
 
             TextRenderer.DrawText(
-                e.Graphics,
+                graphics,
                 text,
-                e.CellStyle.Font,
+                font,
                 textRect,
-                e.CellStyle.ForeColor,
+                foreColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
             e.Handled = true;
@@ -434,7 +443,7 @@ namespace TrinityModelViewer
             row.Cells["ParamValue"] = cell;
         }
 
-        private string FormatOverrideValue(string type, object value) => materialsEditorService.FormatOverrideValue(type, value);
+        private string FormatOverrideValue(string type, object? value) => materialsEditorService.FormatOverrideValue(type, value);
 
     }
 }

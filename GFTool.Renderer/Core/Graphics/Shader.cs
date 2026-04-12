@@ -10,8 +10,8 @@ namespace GFTool.Renderer.Core.Graphics
         public readonly int Handle;
         private readonly string Name;
 
-        private readonly Dictionary<string, int> uniformLocations = null;
-        private readonly Dictionary<string, ActiveUniformType> uniformTypes = null;
+        private readonly Dictionary<string, int> uniformLocations = new Dictionary<string, int>();
+        private readonly Dictionary<string, ActiveUniformType> uniformTypes = new Dictionary<string, ActiveUniformType>();
         private Dictionary<string, string>? uniformArray0NameCache;
         private readonly HashSet<string> missingUniforms = new HashSet<string>();
 

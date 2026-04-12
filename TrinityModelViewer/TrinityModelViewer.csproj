@@ -29,22 +29,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
 
-    <!-- PTCL BFRES mesh support: ensure Syroot BFRES runtime deps are present next to the exe. -->
-    <Content Include="..\ThirdParty\Syroot\Syroot.NintenTools.NSW.Bfres.dll">
-      <Link>Syroot.NintenTools.NSW.Bfres.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="..\ThirdParty\Syroot\Syroot.BinaryData.dll">
-      <Link>Syroot.BinaryData.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="..\ThirdParty\Syroot\Syroot.Maths.dll">
-      <Link>Syroot.Maths.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
   </ItemGroup>
 
   <!-- Keep WinForms resource base names stable when moving forms into subfolders. -->

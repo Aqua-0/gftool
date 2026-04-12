@@ -126,9 +126,8 @@ namespace TrinityModelViewer.Export
             {
                 Field_00 = referenceTrmdl.Field_00,
                 Meshes = outMeshes,
-                Skeleton = string.IsNullOrWhiteSpace(skeletonRelPath)
-                    ? null
-                    : (referenceTrmdl.Skeleton ?? new ModelSkeleton { PathName = skeletonRelPath }),
+                Skeleton = referenceTrmdl.Skeleton ??
+                    new ModelSkeleton { PathName = skeletonRelPath ?? string.Empty },
                 Materials = referenceMaterialPaths,
                 LODs = referenceTrmdl.LODs,
                 Bounds = referenceTrmdl.Bounds ?? lod0Bounds,

@@ -95,7 +95,7 @@ namespace GFTool.Renderer.Core.Graphics
             return true;
         }
 
-        public Shader GetShader(string name)
+        public Shader? GetShader(string name)
         {
             if (!shaders.ContainsKey(name))
             {
@@ -109,6 +109,10 @@ namespace GFTool.Renderer.Core.Graphics
         public void Bind(string name)
         {
             var shader = GetShader(name);
+            if (shader == null)
+            {
+                return;
+            }
             shader.Bind();
         }
     }

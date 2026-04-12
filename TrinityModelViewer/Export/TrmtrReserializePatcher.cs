@@ -185,7 +185,7 @@ namespace TrinityModelViewer.Export
                         RepeatV = s.RepeatV,
                         RepeatW = s.RepeatW,
                         BorderColor = s.BorderColor == null
-                            ? null
+                            ? new Trinity.Core.Flatbuffers.Utils.RGBA()
                             : new Trinity.Core.Flatbuffers.Utils.RGBA
                             {
                                 R = s.BorderColor.R,

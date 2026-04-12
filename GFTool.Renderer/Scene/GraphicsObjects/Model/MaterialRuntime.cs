@@ -454,7 +454,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 		            return new Material(materialPath, trmat, assetProvider);
 		        }
 
-	        private static TRMaterial ConvertTrmtrMaterial(TrmtrFileMaterial src, ShaderGame game, TRSampler[]? legacySamplers)
+	        private static TRMaterial ConvertTrmtrMaterial(TrmtrFileMaterial? src, ShaderGame game, TRSampler[]? legacySamplers)
 	        {
 	            var shaderParams = new List<TRStringParameter>();
 

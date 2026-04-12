@@ -234,8 +234,15 @@ namespace TrinityModelViewer
 
             try
             {
+                if (string.IsNullOrWhiteSpace(referenceTrmdlPath))
+                {
+                    MessageBox.Show(this, "No source TRMDL path is available for glTF export.", "Export glTF",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 TrinityModelViewer.Export.GltfTrinityPipeline.Export(
-                    referenceTrmdlPath,
+                    referenceTrmdlPath!,
                     gltfPath,
                     outTrmdl,
                     patchBaseColorTextures: false,

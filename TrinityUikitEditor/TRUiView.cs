@@ -30,10 +30,15 @@ namespace TrinityUikitEditor
                             new Type[] { typeof(byte[]) },  // Parameter types
                             null); // Don't specify modifiers
                 var compType = Assembly.Load("GFTool.Core").GetTypes().FirstOrDefault(t => t.Name == chunk.Type);
+                if (method == null || compType == null)
+                {
+                    return null;
+                }
+
                 var generic = method.MakeGenericMethod(compType);
                 obj = generic.Invoke(null, new object[] { chunk.Data });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 MessageBox.Show("Error parsing chunk data for " + chunk.Type);
             }
@@ -67,7 +72,7 @@ namespace TrinityUikitEditor
         public TreeNode TreeNode { get; private set; } = new TreeNode();
 
         //Deserialize scene from metadata
-        public void DeserializeView(ViewMetaData meta, TreeNode node = null)
+        public void DeserializeView(ViewMetaData meta, TreeNode? node = null)
         {
             var truiv = FlatBufferConverter.DeserializeFrom<TRUIV>(meta.FilePath);
             var n = (node == null) ? TreeNode : node;

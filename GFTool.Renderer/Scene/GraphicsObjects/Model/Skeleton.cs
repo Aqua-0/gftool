@@ -222,14 +222,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 .Select(e => e.Path)
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .FirstOrDefault(p =>
-                    string.Equals(Path.GetFileName(p), targetName, StringComparison.OrdinalIgnoreCase) ||
-                    (p.EndsWith(".trskl", StringComparison.OrdinalIgnoreCase) && p.IndexOf("base0001_00_default", StringComparison.OrdinalIgnoreCase) >= 0));
+                    string.Equals(Path.GetFileName(p!), targetName, StringComparison.OrdinalIgnoreCase) ||
+                    (p!.EndsWith(".trskl", StringComparison.OrdinalIgnoreCase) && p.IndexOf("base0001_00_default", StringComparison.OrdinalIgnoreCase) >= 0));
 
             if (!string.IsNullOrWhiteSpace(path))
             {
                 try
                 {
-                    return FlatBufferConverter.DeserializeFrom<TRSKL>(provider.ReadAllBytes(path));
+                    return FlatBufferConverter.DeserializeFrom<TRSKL>(provider.ReadAllBytes(path!));
                 }
                 catch
                 {
@@ -619,7 +619,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                         RotatePivot = node.RotatePivot,
                         ParentNodeIndex = parentIndex,
                         JointInfoIndex = jointIndex,
-                        ParentNodeName = node.ParentNodeName,
+                        ParentNodeName = node.ParentNodeName ?? string.Empty,
                         Priority = node.Priority,
                         PriorityPass = node.PriorityPass,
                         IgnoreParentRotation = node.IgnoreParentRotation

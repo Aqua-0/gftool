@@ -28,7 +28,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         public string Name { get; private set; }
         public string SourceFile { get; private set; }
         public uint Slot { get; private set; }
-        public Bitmap tex { get; private set; }
+        public Bitmap? tex { get; private set; }
         public int textureId { get; private set; }
 
         private readonly string cacheKey;

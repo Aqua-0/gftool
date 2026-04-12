@@ -32,7 +32,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         public string Name { get; set; }
         public IReadOnlyList<Texture> Textures => textures;
 
-	        private Shader shader;
+	        private Shader? shader;
 	        private List<Texture> textures;
 	        private List<Texture>? retiredTextures;
 		        private readonly string shaderKey;

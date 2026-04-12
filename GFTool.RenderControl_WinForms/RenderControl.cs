@@ -11,7 +11,7 @@ namespace GFTool.RenderControl_WinForms
 {
     public partial class RenderControl : GLControl
     {
-        public RenderContext renderer { get; private set; }
+        public RenderContext renderer { get; private set; } = null!;
         public Timer timer { get; private set; }
         public event EventHandler? RendererReady;
 
@@ -41,7 +41,7 @@ namespace GFTool.RenderControl_WinForms
             timer.Enabled = true;
         }
 
-        private bool IsDesignMode()
+        private new bool IsDesignMode()
         {
             return DesignMode || LicenseManager.UsageMode == LicenseUsageMode.Designtime;
         }
@@ -50,7 +50,7 @@ namespace GFTool.RenderControl_WinForms
         {
             base.OnLoad(e);
 
-            if (!IsDesignMode())
+            if (!IsDesignMode() && Context != null)
                 renderer = new RenderContext(Context, Width, Height);
 
             if (!IsDesignMode())
@@ -295,7 +295,7 @@ namespace GFTool.RenderControl_WinForms
             isDragging = false;
         }
 
-        private void movementTimer_Tick(object sender, EventArgs e)
+        private void movementTimer_Tick(object? sender, EventArgs e)
         {
             if (!IsDesignMode())
             {

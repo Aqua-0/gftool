@@ -10,7 +10,6 @@ using System.Text;
 using Trinity.Core.Utils;
 using TrinityModelViewer.Export;
 using Point = System.Drawing.Point;
-using GFTool.Renderer.Core;
 using System.Linq;
 
 
@@ -18,10 +17,7 @@ namespace TrinitySceneView
 {
     public partial class SceneViewerForm : Form
     {
-
-        Point prevMousePos;
-
-        private TRSceneTree sceneTree;
+        private TRSceneTree sceneTree = null!;
         private readonly SceneViewerConfig config;
         private string? assetRoot;
         private string? lastOpenedScenePath;
@@ -677,7 +673,13 @@ namespace TrinitySceneView
                 return;
             }
 
-            InfoBox.Text = TRSceneProperties.GetProperties(meta?.Type, meta?.Data);
+            if (!meta.HasValue || meta.Value.Data == null)
+            {
+                ClearProperties();
+                return;
+            }
+
+            InfoBox.Text = TRSceneProperties.GetProperties(meta.Value.Type, meta.Value.Data);
             propertyGrid.SelectedObject = new ScenePropertyGridProxy(meta.Value);
 
             // Best-effort: if the selected node represents an NPC spawner, show candidate models.

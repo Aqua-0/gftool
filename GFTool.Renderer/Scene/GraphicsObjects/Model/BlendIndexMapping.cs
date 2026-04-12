@@ -463,12 +463,12 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 looksLikeAccessory = false;
             }
 
-            (int outOfRange, int nonInfluencer) bestScore = ScoreBlendIndexMapping(source, weights, BlendIndexRemapMode.None, boneWeights, skinPalette);
+            (int outOfRange, int nonInfluencer) bestScore = ScoreBlendIndexMapping(source!, weights, BlendIndexRemapMode.None, boneWeights, skinPalette);
             BlendIndexRemapMode bestMode = BlendIndexRemapMode.None;
 
             void consider(BlendIndexRemapMode candidate)
             {
-                var score = ScoreBlendIndexMapping(source, weights, candidate, boneWeights, skinPalette);
+                var score = ScoreBlendIndexMapping(source!, weights, candidate, boneWeights, skinPalette);
                 if (score.outOfRange < bestScore.outOfRange ||
                     (score.outOfRange == bestScore.outOfRange && score.nonInfluencer < bestScore.nonInfluencer))
                 {
@@ -513,7 +513,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 maxIndexBefore >= 0 &&
                 maxIndexBefore < boneWeights.Length)
             {
-                var boneWeightScore = ScoreBlendIndexMapping(source, weights, BlendIndexRemapMode.BoneWeights, boneWeights, skinPalette);
+                var boneWeightScore = ScoreBlendIndexMapping(source!, weights, BlendIndexRemapMode.BoneWeights, boneWeights, skinPalette);
                 if (boneWeightScore == bestScore)
                 {
                     // If we already determined this mesh likely uses joint-info index space, don't force BoneWeights.
@@ -529,14 +529,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             // look correct in bind pose even if indices are in the wrong index space.
             if (bestMode == BlendIndexRemapMode.None)
             {
-                var jointScore = canMapJointInfo ? ScoreBlendIndexMapping(source, weights, BlendIndexRemapMode.JointInfo, boneWeights, skinPalette) : (int.MaxValue, int.MaxValue);
+                var jointScore = canMapJointInfo ? ScoreBlendIndexMapping(source!, weights, BlendIndexRemapMode.JointInfo, boneWeights, skinPalette) : (int.MaxValue, int.MaxValue);
                 if (preferJointInfo && canMapJointInfo && !looksLikeAccessory && !looksLikeDirectRigIndexSpace && jointScore == bestScore)
                 {
                     bestMode = BlendIndexRemapMode.JointInfo;
                 }
                 else if (canMapSkinPalette)
                 {
-                    var palScore = ScoreBlendIndexMapping(source, weights, BlendIndexRemapMode.SkinningPalette, boneWeights, skinPalette);
+                    var palScore = ScoreBlendIndexMapping(source!, weights, BlendIndexRemapMode.SkinningPalette, boneWeights, skinPalette);
                     if (palScore == bestScore)
                     {
                         bestMode = BlendIndexRemapMode.SkinningPalette;

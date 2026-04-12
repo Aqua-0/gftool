@@ -2,6 +2,7 @@ using GFTool.Renderer.Core;
 using OpenTK.Mathematics;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -171,36 +172,10 @@ namespace TrinitySceneView
                 MessageType.LOG,
                 $"[Scene] NPC spawner resolved: {sceneObjectName} -> assetId={chosenAssetId} (choices={assetIds.Count})");
 
-            // We don't auto-spawn NPC models into the renderer; this resolver is used to list
-            // what's in the scene and to allow manual spawning from the UI when desired.
             return;
-
-            Matrix4 baseMatrix = sceneObjectMatrix;
-            if (TryGetByVariants(npcDb.SpawnerTransforms, sceneObjectName, normalizedName, out var t))
-            {
-                baseMatrix = parentMatrix * BuildSpawnerTransformMatrix(t);
-            }
-
-            var templateSpawns = GetTemplateSpawns(templateAbs, templateCache, templateInProgress, token);
-            if (templateSpawns.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var m in templateSpawns)
-            {
-                token.ThrowIfCancellationRequested();
-                spawns.Add(new SceneModelSpawn
-                {
-                    SceneFile = sceneFile,
-                    SceneObjectName = sceneObjectName,
-                    ModelPath = m.ModelPath,
-                    ModelMatrix = baseMatrix * m.LocalMatrix
-                });
-            }
         }
 
-        private static bool TryGetByVariants<T>(Dictionary<string, T> dict, string key, string normalized, out T value)
+        private static bool TryGetByVariants<T>(Dictionary<string, T> dict, string key, string normalized, [MaybeNullWhen(false)] out T value)
         {
             if (dict.TryGetValue(key, out value))
             {

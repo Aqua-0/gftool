@@ -106,7 +106,10 @@ namespace TrinityModelViewer
                     $"[UI] Added Variations tab. tabs={string.Join(", ", materialTabs.TabPages.Cast<TabPage>().Select(t => t.Text))}");
             }
 
-            ApplyTheme(materialVariationsTab);
+            if (materialVariationsTab != null)
+            {
+                ApplyTheme(materialVariationsTab);
+            }
         }
 
         private void EnsureMaterialSetUi()
@@ -151,7 +154,10 @@ namespace TrinityModelViewer
             materialVariationsPanel!.Controls.Add(materialVariantTable!);
             materialVariationsPanel!.Controls.Add(materialSetPanel);
 
-            ApplyTheme(materialVariationsTab);
+            if (materialVariationsTab != null)
+            {
+                ApplyTheme(materialVariationsTab);
+            }
 
             EnsureMaterialVariationsGrid();
             UpdateMaterialVariationsGrid();
@@ -457,7 +463,7 @@ namespace TrinityModelViewer
                     continue;
                 }
 
-                object value;
+                object? value;
                 if (currentMaterial.TryGetUniformOverride(v4.Name, out var overrideValue))
                 {
                     value = overrideValue;
@@ -472,7 +478,7 @@ namespace TrinityModelViewer
                 {
                     Name = v4.Name,
                     Type = "Vec4",
-                    Value = value
+                    Value = value!
                 });
             }
 
@@ -486,7 +492,7 @@ namespace TrinityModelViewer
                 materialVariationsGrid.Rows.Clear();
                 foreach (var e in merged)
                 {
-                    object value = e.Value;
+                    object? value = e.Value;
                     if (currentMaterial.TryGetUniformOverride(e.Name, out var overrideValue))
                     {
                         value = overrideValue;

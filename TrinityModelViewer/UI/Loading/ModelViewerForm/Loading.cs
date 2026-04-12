@@ -35,7 +35,8 @@ namespace TrinityModelViewer
             {
                 MessageType.LOG => "Log",
                 MessageType.WARNING => "Warning",
-                MessageType.ERROR => "Error"
+                MessageType.ERROR => "Error",
+                _ => "Log"
             };
 
             if (!messageListView.Items.ContainsKey(e.GetHashCode().ToString()))

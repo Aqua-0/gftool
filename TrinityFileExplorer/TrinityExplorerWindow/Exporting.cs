@@ -75,7 +75,10 @@ namespace TrinityFileExplorer
                         Directory.CreateDirectory(dir);
                     }
 
-                    File.WriteAllBytes(filepath, buffer);
+                    if (buffer != null)
+                    {
+                        File.WriteAllBytes(filepath, buffer);
+                    }
 
                     break;
                 }

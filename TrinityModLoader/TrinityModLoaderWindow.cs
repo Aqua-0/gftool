@@ -201,7 +201,7 @@ namespace TrinityModLoader
             ModPack modPack;
             try
             {
-                modPack = JsonSerializer.Deserialize<ModPack>(File.ReadAllText(Path.Join(path, ModPack.settingsRel)));
+                modPack = JsonSerializer.Deserialize<ModPack>(File.ReadAllText(Path.Join(path, ModPack.settingsRel))) ?? new ModPack { mods = new List<IModEntry>() };
             }
             catch
             {
@@ -237,7 +237,7 @@ namespace TrinityModLoader
             if (!File.Exists(file))
             {
                 MessageBox.Show($"No TRPFD found in the provided RomFS folder.\nUsually it's in {file}");
-                customFileDescriptor = null;
+                customFileDescriptor = null!;
                 return false;
             }
 
@@ -245,6 +245,7 @@ namespace TrinityModLoader
             if (customFileDescriptor == null)
             {
                 MessageBox.Show("Failed to load TRPFD.");
+                customFileDescriptor = null!;
                 return false;
             }
 
@@ -271,7 +272,7 @@ namespace TrinityModLoader
                 var fhash = GFFNV.Hash(f);
                 lock (customFileDescriptor)
                 {
-                    customFileDescriptor?.RemoveFile(fhash);
+                    customFileDescriptor.RemoveFile(fhash);
                 }
             }
         }
@@ -286,6 +287,11 @@ namespace TrinityModLoader
             }
 
             string layeredFSLocation = Path.Join(modPackLocation, ModPack.romfsRel);
+            var modPack = modList.ModPack;
+            if (modPack == null)
+            {
+                return false;
+            }
 
             if (Directory.Exists(layeredFSLocation))
                 Directory.Delete(layeredFSLocation, true);
@@ -294,7 +300,7 @@ namespace TrinityModLoader
 
             foreach (int i in modList.CheckedIndices)
             {
-                IModEntry mod = modList.ModPack.mods[i];
+                IModEntry mod = modPack.mods[i];
                 if (mod == null) continue;
                 ApplyMod(mod, layeredFSLocation, customFileDescriptor);
 
@@ -308,7 +314,7 @@ namespace TrinityModLoader
         void SerializeTRPFD(string fileOut, CustomFileDescriptor customFileDescriptor)
         {
             var file = new System.IO.FileInfo(fileOut);
-            if (!file.Directory.Exists) file.Directory.Create();
+            if (file.Directory != null && !file.Directory.Exists) file.Directory.Create();
 
             var trpfd = FlatBufferConverter.SerializeFrom<CustomFileDescriptor>(customFileDescriptor);
             File.WriteAllBytes(fileOut, trpfd);
@@ -331,7 +337,14 @@ namespace TrinityModLoader
 
         private void PopulateMetaData()
         {
-            var mod = modList.ModPack.mods[modList.SelectedIndex];
+            var modPack = modList.ModPack;
+            if (modPack == null || modList.SelectedIndex < 0 || modList.SelectedIndex >= modPack.mods.Count)
+            {
+                ClearMetaData();
+                return;
+            }
+
+            var mod = modPack.mods[modList.SelectedIndex];
             var modData = mod.FetchModData();
 
             if (modData != null)
@@ -346,11 +359,11 @@ namespace TrinityModLoader
 
         private void ClearMetaData()
         {
-            ModAuthorLabel.Text = null;
-            ModNameLabel.Text = null;
-            ModPathLabel.Text = null;
-            ModDescriptionBox.Text = null;
-            ModVersionLabel.Text = null; // Added clearing version label
+            ModAuthorLabel.Text = string.Empty;
+            ModNameLabel.Text = string.Empty;
+            ModPathLabel.Text = string.Empty;
+            ModDescriptionBox.Text = string.Empty;
+            ModVersionLabel.Text = string.Empty;
         }
 
         private void PopulateFileData()
@@ -359,7 +372,14 @@ namespace TrinityModLoader
             fileView.BeginUpdate();
             fileView.Items.Clear();
 
-            var mod = modList.ModPack.mods[modList.SelectedIndex];
+            var modPack = modList.ModPack;
+            if (modPack == null || modList.SelectedIndex < 0 || modList.SelectedIndex >= modPack.mods.Count)
+            {
+                fileView.EndUpdate();
+                return;
+            }
+
+            var mod = modPack.mods[modList.SelectedIndex];
             var files = mod.FetchFiles();
 
             foreach (string file in files)

@@ -13,7 +13,6 @@ using System.Drawing;
 using System.Diagnostics;
 using System.Linq;
 using Trinity.Core.Assets;
-using GFTool.Renderer.Core;
 
 namespace GFTool.Renderer
 {
@@ -21,10 +20,10 @@ namespace GFTool.Renderer
     {
         private static readonly Color DefaultBackgroundColor = Color.FromArgb(45, 45, 45);
 
-        private IGraphicsContext viewport = null;
+        private IGraphicsContext viewport;
         private int Width, Height;
 
-        GBuffer gbuffer;
+        GBuffer gbuffer = null!;
         private Camera camera;
         private bool wireframeEnabled = false;
         private int ssaoFbo;

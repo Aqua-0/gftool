@@ -310,7 +310,7 @@ namespace TrinityModelViewer.UI.Materials
             return (int)MathF.Round(value * 255f);
         }
 
-        public string FormatOverrideValue(string type, object value)
+        public string FormatOverrideValue(string type, object? value)
         {
             switch (value)
             {
@@ -327,7 +327,7 @@ namespace TrinityModelViewer.UI.Materials
                 case Vector4 v4:
                     return $"{v4.X.ToString("0.####", CultureInfo.InvariantCulture)}, {v4.Y.ToString("0.####", CultureInfo.InvariantCulture)}, {v4.Z.ToString("0.####", CultureInfo.InvariantCulture)}, {v4.W.ToString("0.####", CultureInfo.InvariantCulture)}";
                 default:
-                    return value.ToString() ?? string.Empty;
+                    return value?.ToString() ?? string.Empty;
             }
         }
     }

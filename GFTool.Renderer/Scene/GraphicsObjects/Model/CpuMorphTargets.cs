@@ -350,35 +350,41 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                         continue;
                     }
 
+                    var targetVertexIndices = t.TargetVertexIndices;
+                    if (targetVertexIndices == null)
+                    {
+                        continue;
+                    }
+
                     if (basePositionsBySubmeshIndex.TryGetValue(representativeSubmesh, out var basePos) &&
                         baseNormalsBySubmeshIndex.TryGetValue(representativeSubmesh, out var baseNrm) &&
                         baseTangentsBySubmeshIndex.TryGetValue(representativeSubmesh, out var baseTan) &&
-                        LooksLikeAbsolutePartialMorphPositions(pos, basePos, t.TargetVertexIndices))
+                        LooksLikeAbsolutePartialMorphPositions(pos, basePos, targetVertexIndices))
                     {
-                        int n = Math.Min(pos.Length, t.TargetVertexIndices.Length);
+                        int n = Math.Min(pos.Length, targetVertexIndices.Length);
                         for (int i = 0; i < n; i++)
                         {
-                            int j = t.TargetVertexIndices[i];
+                            int j = targetVertexIndices[i];
                             if (j >= 0 && j < basePos.Length)
                             {
                                 pos[i] -= basePos[j];
                             }
                         }
 
-                        n = Math.Min(nrm.Length, t.TargetVertexIndices.Length);
+                        n = Math.Min(nrm.Length, targetVertexIndices.Length);
                         for (int i = 0; i < n; i++)
                         {
-                            int j = t.TargetVertexIndices[i];
+                            int j = targetVertexIndices[i];
                             if (j >= 0 && j < baseNrm.Length)
                             {
                                 nrm[i] -= baseNrm[j];
                             }
                         }
 
-                        n = Math.Min(tan.Length, t.TargetVertexIndices.Length);
+                        n = Math.Min(tan.Length, targetVertexIndices.Length);
                         for (int i = 0; i < n; i++)
                         {
-                            int j = t.TargetVertexIndices[i];
+                            int j = targetVertexIndices[i];
                             if (j >= 0 && j < baseTan.Length)
                             {
                                 tan[i] -= baseTan[j];

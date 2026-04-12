@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.Versioning;
 
 namespace GFTool.Renderer.Scene.GraphicsObjects.Particles
 {
@@ -168,6 +169,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects.Particles
             return converted;
         }
 
+        [SupportedOSPlatform("windows")]
         private int GetOrCreateGlTexture(byte[] bntxBytes, string textureName)
         {
             if (glTextureByName.TryGetValue(textureName, out var existing))

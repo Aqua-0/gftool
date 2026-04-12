@@ -73,7 +73,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             bool hasBlendWeights = false;
             TRVertexFormat? blendIndexFormat = null;
             TRVertexFormat? blendWeightFormat = null;
-            blendIndexStats = null;
+            blendIndexStats = new BlendIndexStats();
 
             List<uint> indices = new List<uint>();
             long currPos = 0;
@@ -335,6 +335,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                         $"[TRMSH] mesh={meshShape.Name} unk7='{meshShape.MeshUnk7}' meshName='{meshShape.MeshName}' parts={(meshShape.meshParts?.Length ?? 0)}");
                 }
 
+                if (meshShape.meshParts == null || meshShape.meshParts.Length == 0)
+                {
+                    continue;
+                }
+
                 foreach (var part in meshShape.meshParts)
                 {
                     MaterialNames.Add(part.MaterialName);
@@ -584,11 +589,12 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 SetStatusIfEmpty("morph metadata mesh-count mismatch (missing TRMSH meshes)");
             }
 
-            int trmshMeshCount = trmsh.Meshes?.Length ?? 0;
+            var trmshMeshes = trmsh.Meshes;
+            int trmshMeshCount = trmshMeshes?.Length ?? 0;
             int maxMeshIndex = Math.Min(trmshMeshCount, buffers.Length);
             for (int meshIndex = 0; meshIndex < maxMeshIndex; meshIndex++)
             {
-                var meshShape = trmsh.Meshes[meshIndex];
+                var meshShape = trmshMeshes![meshIndex];
                 if (meshShape == null)
                 {
                     continue;

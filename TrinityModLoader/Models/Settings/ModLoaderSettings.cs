@@ -7,8 +7,8 @@ namespace TrinityModLoader.Models.Settings
 {
     public static class ModLoaderSettings
     {
-        private static string _settingsPath;
-        public static FilepathSettings _settings;
+        private static string _settingsPath = string.Empty;
+        public static FilepathSettings _settings = new FilepathSettings();
 
         public static void Open(string path = "settings.json")
         {
@@ -20,7 +20,7 @@ namespace TrinityModLoader.Models.Settings
             }
             else
             {
-                _settings = JsonSerializer.Deserialize<FilepathSettings>(File.ReadAllText(path));
+                _settings = JsonSerializer.Deserialize<FilepathSettings>(File.ReadAllText(path)) ?? new FilepathSettings();
             }
         }
 

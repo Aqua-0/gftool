@@ -228,7 +228,7 @@ namespace TrinityModelViewer
             renderCtrl.renderer.SetLoopAnimationOverride(loopAnimationCheckBox.Checked);
         }
 
-        private void exportAnimationButton_Click(object sender, EventArgs e)
+        private void exportAnimationButton_Click(object? sender, EventArgs e)
         {
             var anim = GetSelectedAnimation();
             if (anim == null)

@@ -9,7 +9,6 @@ using System.Drawing;
 using System.Text;
 using Trinity.Core.Utils;
 using Point = System.Drawing.Point;
-using GFTool.Renderer.Core;
 
 
 namespace TrinitySceneView
@@ -60,9 +59,13 @@ namespace TrinitySceneView
             cameraStatusLbl.Text = text;
         }
 
-        private void toolstripGBuf_Clicked(object sender, EventArgs e)
+        private void toolstripGBuf_Clicked(object? sender, EventArgs e)
         {
             var item = sender as ToolStripMenuItem;
+            if (item == null)
+            {
+                return;
+            }
             if (item.Checked) return;
 
             GBuffer.DisplayType disp = GBuffer.DisplayType.DISPLAY_ALL;
@@ -182,7 +185,8 @@ namespace TrinitySceneView
             {
                 MessageType.LOG => "Log",
                 MessageType.WARNING => "Warning",
-                MessageType.ERROR => "Error"
+                MessageType.ERROR => "Error",
+                _ => "Log"
             };
 
             //Only unique errors

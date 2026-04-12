@@ -14,7 +14,6 @@ using System.Drawing;
 using System.Diagnostics;
 using System.Linq;
 using Trinity.Core.Assets;
-using GFTool.Renderer.Core;
 
 namespace GFTool.Renderer
 {

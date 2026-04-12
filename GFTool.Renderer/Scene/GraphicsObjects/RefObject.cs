@@ -49,9 +49,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             child.Setup();
         }
 
-        public RefObject Find(Type type)
+        public RefObject? Find(Type type)
         {
-            RefObject ob = null;
+            RefObject? ob = null;
 
             foreach (var c in children)
             {

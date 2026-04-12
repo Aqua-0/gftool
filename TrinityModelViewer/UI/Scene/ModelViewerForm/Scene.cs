@@ -184,7 +184,7 @@ namespace TrinityModelViewer
                 {
                     tag.Model.SetSelectedSubmesh(sub);
                 }
-                renderCtrl.Invalidate();
+                renderCtrl?.Invalidate();
                 return;
             }
 
@@ -195,7 +195,7 @@ namespace TrinityModelViewer
                 {
                     tag.Model.SetSelectedSubmesh(sub);
                 }
-                renderCtrl.Invalidate();
+                renderCtrl?.Invalidate();
                 if (!string.IsNullOrWhiteSpace(tag.MaterialName))
                 {
                     SelectMaterialByName(tag.MaterialName);
@@ -365,6 +365,7 @@ namespace TrinityModelViewer
             var names = tag.Model.GetMaterials()
                 .Select(m => m?.Name)
                 .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList();

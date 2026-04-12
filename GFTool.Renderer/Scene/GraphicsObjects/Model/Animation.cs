@@ -17,7 +17,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 {
 	    public partial class Model : RefObject
 	    {
-	        public void ApplyAnimation(Animation animation, float frame, Animation? fallbackAnimation = null)
+	        public void ApplyAnimation(Animation? animation, float frame, Animation? fallbackAnimation = null)
 	        {
 	            if (animation != null &&
 	                !string.Equals(lastAnimSkinDebugName, animation.Name, StringComparison.OrdinalIgnoreCase))
@@ -34,7 +34,10 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	            }
 
 	            var effectiveArmature = GetEffectiveArmature();
-	            effectiveArmature?.ApplyAnimation(animation, fallbackAnimation, frame);
+                if (effectiveArmature != null && animation != null)
+                {
+	                effectiveArmature.ApplyAnimation(animation, fallbackAnimation, frame);
+                }
             if (RenderOptions.EnablePerfSpikeLog && effectiveArmature != null)
             {
                 lastAnimAllocPoseComputeBytes = effectiveArmature.LastAllocPoseComputeBytes;
@@ -82,6 +85,10 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                }
 
 	                var source = BlendIndiciesOriginal[submeshIndex];
+                    if (source == null)
+                    {
+                        continue;
+                    }
 	                if (source == null || source.Length == 0)
 	                {
 	                    continue;

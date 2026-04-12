@@ -92,6 +92,13 @@ namespace TrinityModelViewer
 
 		            try
 		            {
+                        if (!referenceIsGfpak && string.IsNullOrWhiteSpace(referenceTrmdlPath))
+                        {
+                            MessageBox.Show(this, "No source TRMDL path is available for export.", "Export Trinity",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
+                        }
+
 		                var outFull = Path.GetFullPath(sfd.FileName);
 		                if (!referenceIsGfpak && !string.IsNullOrWhiteSpace(referenceTrmdlPath))
 		                {
@@ -107,7 +114,7 @@ namespace TrinityModelViewer
 		                if (hasGltfPreview)
 		                {
 		                    TrinityModelViewer.Export.GltfTrinityPipeline.Export(
-		                        referenceTrmdlPath,
+		                        referenceTrmdlPath!,
 		                        ctx.GltfPath,
 		                        sfd.FileName,
 		                        patchBaseColorTextures: false,
@@ -115,7 +122,7 @@ namespace TrinityModelViewer
 		                }
 		                else if (!referenceIsGfpak)
 		                {
-		                    TrinityModelViewer.Export.TrinityModelSetExporter.ExportCopy(referenceTrmdlPath, sfd.FileName);
+		                    TrinityModelViewer.Export.TrinityModelSetExporter.ExportCopy(referenceTrmdlPath!, sfd.FileName);
 		                }
 		                else
 		                {
@@ -236,6 +243,13 @@ namespace TrinityModelViewer
 
             try
             {
+                if (!referenceIsGfpak && string.IsNullOrWhiteSpace(referenceTrmdlPath))
+                {
+                    MessageBox.Show(this, "No source TRMDL path is available for export.", "Export Trinity (Reserialize)",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 var outFull = Path.GetFullPath(sfd.FileName);
                 if (!referenceIsGfpak && !string.IsNullOrWhiteSpace(referenceTrmdlPath))
                 {
@@ -251,7 +265,7 @@ namespace TrinityModelViewer
                 if (hasGltfPreview)
                 {
                     TrinityModelViewer.Export.GltfTrinityPipeline.Export(
-                        referenceTrmdlPath,
+                        referenceTrmdlPath!,
                         ctx.GltfPath,
                         sfd.FileName,
                         patchBaseColorTextures: false,
@@ -259,7 +273,7 @@ namespace TrinityModelViewer
                 }
                 else if (!referenceIsGfpak)
                 {
-                    TrinityModelViewer.Export.TrinityModelSetExporter.ExportReserializeCopy(referenceTrmdlPath, sfd.FileName, tag.Model);
+                    TrinityModelViewer.Export.TrinityModelSetExporter.ExportReserializeCopy(referenceTrmdlPath!, sfd.FileName, tag.Model);
                 }
                 else
                 {

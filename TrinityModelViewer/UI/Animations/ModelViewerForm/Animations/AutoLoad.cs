@@ -59,9 +59,9 @@ namespace TrinityModelViewer
 
                 try
                 {
-                    var bytes = provider.ReadAllBytes(animPath);
+                    var bytes = provider.ReadAllBytes(animPath!);
                     var animFile = FlatBufferConverter.DeserializeFrom<GfAnim.Animation>(bytes);
-                    var anim = new GFTool.Renderer.Scene.GraphicsObjects.Animation(animFile, Path.GetFileNameWithoutExtension(animPath), animPath);
+                    var anim = new GFTool.Renderer.Scene.GraphicsObjects.Animation(animFile, Path.GetFileNameWithoutExtension(animPath!) ?? string.Empty, animPath);
                     animations.Add(anim);
                     var item = new ListViewItem(anim.Name) { Tag = anim };
                     animationsList.Items.Add(item);

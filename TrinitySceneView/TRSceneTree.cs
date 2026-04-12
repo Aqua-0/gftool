@@ -155,7 +155,7 @@ namespace TrinitySceneView
         }
 
         //Deserialize scene from metadata
-        public void DeserializeScene(SceneMetaData meta, TreeNode node = null)
+        public void DeserializeScene(SceneMetaData meta, TreeNode? node = null)
         {
             var trscn = FlatBufferConverter.DeserializeFrom<TRSCN>(meta.FilePath);
             var n = (node == null) ? TreeNode : node;
@@ -186,7 +186,7 @@ namespace TrinitySceneView
             {
                 SubScene sub = FlatBufferConverter.DeserializeFrom<SubScene>(chunk.Data);
 
-                string absPath = Path.Combine(Path.GetDirectoryName(sceneFile), sub.Filepath).Replace(".trs", "_0.trs"); //trscn, trsot, trsog
+                string absPath = Path.Combine(Path.GetDirectoryName(sceneFile) ?? string.Empty, sub.Filepath).Replace(".trs", "_0.trs"); //trscn, trsot, trsog
                 InnerData.Add(newnode, new SceneMetaData(absPath));
             }
             else

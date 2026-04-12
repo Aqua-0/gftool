@@ -43,6 +43,12 @@ namespace TrinityModelViewer.Export
             bool hasUv0 = prim.Uv0 != null && prim.Uv0.Length == vertexCount;
             bool hasJoints = prim.JointIndices != null && prim.JointIndices.Length == vertexCount;
             bool hasWeights = prim.JointWeights != null && prim.JointWeights.Length == vertexCount;
+            var normals = prim.Normals;
+            var tangents = prim.Tangents;
+            var colors = prim.Colors;
+            var uv0 = prim.Uv0;
+            var jointIndices = prim.JointIndices;
+            var jointWeights = prim.JointWeights;
 
             for (int v = 0; v < vertexCount; v++)
             {
@@ -58,13 +64,13 @@ namespace TrinityModelViewer.Export
                     case TRVertexUsage.NORMAL:
                         if (el.Layer == 0 && hasNormals)
                         {
-                            WriteNormal(dst, offset, el.Format, prim.Normals[v]);
+                            WriteNormal(dst, offset, el.Format, normals![v]);
                         }
                         break;
                     case TRVertexUsage.TANGENT:
                         if (el.Layer == 0 && hasTangents)
                         {
-                            WriteTangent(dst, offset, el.Format, prim.Tangents[v]);
+                            WriteTangent(dst, offset, el.Format, tangents![v]);
                         }
                         break;
                     case TRVertexUsage.BINORMAL:
@@ -73,25 +79,25 @@ namespace TrinityModelViewer.Export
                     case TRVertexUsage.COLOR:
                         if (el.Layer == 0 && hasColors)
                         {
-                            WriteColor(dst, offset, el.Format, prim.Colors[v]);
+                            WriteColor(dst, offset, el.Format, colors![v]);
                         }
                         break;
                     case TRVertexUsage.TEX_COORD:
                         if (el.Layer == 0 && hasUv0)
                         {
-                            WriteVector2(dst, offset, el.Format, prim.Uv0[v]);
+                            WriteVector2(dst, offset, el.Format, uv0![v]);
                         }
                         break;
                     case TRVertexUsage.BLEND_INDEX:
                         if (el.Layer == 0 && hasJoints)
                         {
-                            WriteBlendIndices(dst, offset, el.Format, prim.JointIndices[v]);
+                            WriteBlendIndices(dst, offset, el.Format, jointIndices![v]);
                         }
                         break;
                     case TRVertexUsage.BLEND_WEIGHTS:
                         if (el.Layer == 0 && hasWeights)
                         {
-                            WriteBlendWeights(dst, offset, el.Format, prim.JointWeights[v]);
+                            WriteBlendWeights(dst, offset, el.Format, jointWeights![v]);
                         }
                         break;
                 }

@@ -108,8 +108,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             for (int v = 0; v < vertexCount; v++)
             {
                 int maxInfluences = 4 * streamCount;
-                Span<int> uniqueIndices = stackalloc int[maxInfluences];
-                Span<float> uniqueWeights = stackalloc float[maxInfluences];
+                Span<int> uniqueIndices = new int[maxInfluences];
+                Span<float> uniqueWeights = new float[maxInfluences];
                 int uniqueCount = 0;
 
                 for (int s = 0; s < streamCount; s++)
@@ -129,8 +129,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     continue;
                 }
 
-                Span<int> topIndices = stackalloc int[4];
-                Span<float> topWeights = stackalloc float[4];
+                Span<int> topIndices = new int[4];
+                Span<float> topWeights = new float[4];
 
                 for (int i = 0; i < uniqueCount; i++)
                 {

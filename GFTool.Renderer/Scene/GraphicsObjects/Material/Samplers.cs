@@ -56,11 +56,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         private void RebuildTexturesFromCurrentState()
         {
             var samplersBySlot = new Dictionary<uint, TRSampler>();
-            for (int i = 0; i < (samplers?.Length ?? 0); i++)
+            TRSampler[] samplerArray = samplers ?? Array.Empty<TRSampler>();
+            for (int i = 0; i < samplerArray.Length; i++)
             {
-                if (samplers[i] != null)
+                var sampler = samplerArray[i];
+                if (sampler != null)
                 {
-                    samplersBySlot[(uint)i] = samplers[i];
+                    samplersBySlot[(uint)i] = sampler;
                 }
             }
 

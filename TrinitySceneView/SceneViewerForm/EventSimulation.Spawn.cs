@@ -522,7 +522,7 @@ namespace TrinitySceneView
                 MessageType.LOG,
                 $"[Event] Spawn trace: template chunks: cc={ccChunks} modelComponents={modelComponents} objectTemplates={objectTemplates}");
 
-            if (ccChunks > 0)
+            if (ccChunks > 0 && trscn != null)
             {
                 TryLogCcResolution(templateAbs, trscn);
             }

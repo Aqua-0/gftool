@@ -51,13 +51,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             if (RenderOptions.LegacyMode)
             {
                 shader ??= ShaderPool.Instance.GetShader(shaderKey);
-                return shader ?? ShaderPool.Instance.GetShader("Standard");
+                return shader ?? ShaderPool.Instance.GetShader("Standard")!;
             }
 
             shader ??= ShaderPool.Instance.GetShader(shaderKey);
             // If the desired shader failed to compile/load, fall back to Standard so the mesh
             // still renders (and skinning uniforms are applied) instead of reusing stale GL state.
-            return shader ?? ShaderPool.Instance.GetShader("Standard");
+            return shader ?? ShaderPool.Instance.GetShader("Standard")!;
         }
 
     }

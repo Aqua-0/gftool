@@ -142,7 +142,10 @@ namespace TrinityModelViewer
                 return;
             }
 
-            var entry = (AssetEntry)listView.SelectedItems[0].Tag;
+            if (listView.SelectedItems[0].Tag is not AssetEntry entry)
+            {
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(entry.Path))
             {
                 SelectedModelPath = entry.Path;

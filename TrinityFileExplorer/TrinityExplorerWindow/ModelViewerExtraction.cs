@@ -79,7 +79,7 @@ namespace TrinityFileExplorer
                 bytes = entry.FileBuffer;
                 if (entry.EncryptionType != -1)
                 {
-                    bytes = Oodle.Decompress(bytes, (long)entry.FileSize);
+                    bytes = Oodle.Decompress(bytes, (long)entry.FileSize) ?? Array.Empty<byte>();
                 }
 
                 return true;
@@ -123,8 +123,9 @@ namespace TrinityFileExplorer
 
             private bool TryGetPack(ulong packHash, long packSize, out PackedArchive pack)
             {
-                if (packCache.TryGetValue(packHash, out pack))
+                if (packCache.TryGetValue(packHash, out var cachedPack))
                 {
+                    pack = cachedPack;
                     return true;
                 }
 
@@ -136,7 +137,7 @@ namespace TrinityFileExplorer
                 }
 
                 byte[] fileBytes = ONEFILESerializer.SplitTRPAK(trpfsPath, (long)fileSystem.FileOffsets[fileIndex], packSize);
-                pack = FlatBufferConverter.DeserializeFrom<PackedArchive>(fileBytes);
+                pack = FlatBufferConverter.DeserializeFrom<PackedArchive>(fileBytes)!;
                 packCache[packHash] = pack;
                 return true;
             }

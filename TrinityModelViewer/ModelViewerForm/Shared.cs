@@ -132,7 +132,6 @@ namespace TrinityModelViewer
         private ToolStripMenuItem? skinningToolStripMenuItem;
         private ToolStripMenuItem? deterministicSkinningToolStripMenuItem;
         private bool isUpdatingMaterialGrids;
-        private bool isUpdatingUvPreview;
         private readonly MaterialsEditorService materialsEditorService = new MaterialsEditorService();
         private readonly ComboDisplayItem uvWrapAutoItem = new ComboDisplayItem("Wrap: Auto (Sampler)");
         private Label? perfHudLabel;

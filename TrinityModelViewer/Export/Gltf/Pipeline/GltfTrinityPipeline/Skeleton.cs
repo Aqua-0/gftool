@@ -631,7 +631,7 @@ namespace TrinityModelViewer.Export
                         RotatePivot = node.RotatePivot,
                         ParentNodeIndex = parentIndex,
                         JointInfoIndex = jointIndex,
-                        ParentNodeName = node.ParentNodeName,
+                        ParentNodeName = node.ParentNodeName ?? string.Empty,
                         Priority = node.Priority,
                         PriorityPass = node.PriorityPass,
                         IgnoreParentRotation = node.IgnoreParentRotation

@@ -27,10 +27,10 @@ namespace TrinityFileExplorer
         private DataGridViewTextBoxColumn FileType;
         private DataGridViewTextBoxColumn FileSize;
 
-        private CustomFileDescriptor _fileDescriptor;
-        private FileSystem _fileSystem;
+        private CustomFileDescriptor? _fileDescriptor;
+        private FileSystem? _fileSystem;
 
-        private DataGridViewRow[] rootRows;
+        private DataGridViewRow[]? rootRows;
         public int activePack = -1;
 
         public ExplorerPackViewer()
@@ -50,7 +50,7 @@ namespace TrinityFileExplorer
 
             if (activePack != -1)
             {
-                cwd += _fileDescriptor.PackNames[activePack];
+                cwd += _fileDescriptor?.PackNames[activePack];
             }
 
             return cwd;
@@ -64,7 +64,7 @@ namespace TrinityFileExplorer
         public string? GetPathAtIndex(int index)
         {
             var row = Rows[index];
-            if (row.Cells["FileType"].Value.ToString().Equals("File Archive"))
+            if (string.Equals(row.Cells["FileType"].Value?.ToString(), "File Archive", StringComparison.Ordinal))
             {
                 var path = row.Cells["FileName"].Value.ToString();
                 return path;
@@ -74,16 +74,18 @@ namespace TrinityFileExplorer
 
         private void AddRowsFromPackNames(List<string> paths)
         {
+            if (_fileDescriptor == null)
+            {
+                return;
+            }
+
             if (rootRows == null)
             {
-                var names = _fileDescriptor.PackNames.ToList();
-
-
                 for (int i = 0; i < paths.Count; i++)
                 {
                     string? path = paths[i];
                     PackInfo? packInfo = _fileDescriptor.PackInfo[i];
-                    Rows.Add(new string[] { path, GFFNV.Hash(path).ToString("X16"), "arc", "File Archive", packInfo.FileSize.ToString() + "B" });
+                    Rows.Add(new string[] { path, GFFNV.Hash(path).ToString("X16"), "arc", "File Archive", (packInfo?.FileSize ?? 0).ToString() + "B" });
 
                 }
                 rootRows = new DataGridViewRow[paths.Count];
@@ -97,6 +99,11 @@ namespace TrinityFileExplorer
 
         private void AddRowsFromPack(int index)
         {
+            if (_fileSystem == null || _fileDescriptor == null)
+            {
+                return;
+            }
+
             int fileIndex = Array.IndexOf(_fileSystem.FileHashes, GFFNV.Hash(_fileDescriptor.PackNames[index]));
             PackInfo? packInfo = _fileDescriptor.PackInfo[index];
 
@@ -121,6 +128,11 @@ namespace TrinityFileExplorer
         public void NavigateTo(string path)
         {
             Rows.Clear();
+
+            if (_fileDescriptor == null)
+            {
+                return;
+            }
 
             var packNames = _fileDescriptor.PackNames.ToList();
 

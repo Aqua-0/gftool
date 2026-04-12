@@ -37,7 +37,7 @@ namespace GFTool.Renderer.Core
         private static readonly Lazy<MessageHandler> lazy = new Lazy<MessageHandler>(() => new MessageHandler());
         public static MessageHandler Instance { get { return lazy.Value; } }
 
-        public event EventHandler<Message> MessageCallback;
+        public event EventHandler<Message>? MessageCallback;
         public bool DebugLogsEnabled { get; set; }
         private readonly object logLock = new object();
         private string? logPath;
