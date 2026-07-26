@@ -1,12 +1,6 @@
 # GFTool Monorepo
 Tools and libraries for working with gflib games
 
-## Onboarding
-
-- `docs/ONBOARDING.md`
-- `docs/SHADER_ITERATION_PLAYBOOK.md`
-- `docs/PERF_HUD_AND_SPIKE_LOGGER.md`
-
 ## Tools
 
 ### Trinity Mod Loader
