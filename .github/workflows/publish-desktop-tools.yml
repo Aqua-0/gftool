@@ -1,0 +1,126 @@
+name: Publish desktop tools to latest release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and publish desktop tools
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      BUNDLE_NAME: TrinityTools-win-x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish applications
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundleRoot = Join-Path $env:RUNNER_TEMP $env:BUNDLE_NAME
+          $assetPath = Join-Path $env:RUNNER_TEMP "$($env:BUNDLE_NAME).zip"
+
+          if (Test-Path $bundleRoot) {
+              Remove-Item $bundleRoot -Recurse -Force
+          }
+          if (Test-Path $assetPath) {
+              Remove-Item $assetPath -Force
+          }
+
+          New-Item -ItemType Directory -Path $bundleRoot | Out-Null
+
+          $applications = @(
+              @{
+                  Project = "TrinityModelViewer/TrinityModelViewer.csproj"
+                  Directory = "TrinityModelViewer"
+                  Executable = "TrinityModelViewer.exe"
+              },
+              @{
+                  Project = "TrinitySceneView/TrinitySceneView.csproj"
+                  Directory = "TrinitySceneView"
+                  Executable = "TrinitySceneView.exe"
+              },
+              @{
+                  Project = "TrinityFileExplorer/TrinityFileExplorer.csproj"
+                  Directory = "TrinityFileExplorer"
+                  Executable = "TrinityFileExplorer.exe"
+              }
+          )
+
+          foreach ($application in $applications) {
+              $outputDirectory = Join-Path $bundleRoot $application.Directory
+              dotnet publish $application.Project `
+                  --configuration Release `
+                  --runtime win-x64 `
+                  --self-contained false `
+                  --output $outputDirectory `
+                  --nologo `
+                  -p:DebugType=None `
+                  -p:DebugSymbols=false
+
+              if ($LASTEXITCODE -ne 0) {
+                  throw "dotnet publish failed for $($application.Project)."
+              }
+
+              $executablePath = Join-Path $outputDirectory $application.Executable
+              if (-not (Test-Path $executablePath)) {
+                  throw "Expected executable was not published: $executablePath"
+              }
+          }
+
+          Compress-Archive -Path (Join-Path $bundleRoot "*") -DestinationPath $assetPath -CompressionLevel Optimal
+          "RELEASE_ASSET=$assetPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload bundle to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if ($env:EVENT_NAME -eq "release") {
+              $releaseTag = $env:EVENT_RELEASE_TAG
+          }
+          else {
+              $releaseTag = gh release view `
+                  --repo $env:GITHUB_REPOSITORY `
+                  --json tagName `
+                  --jq ".tagName"
+
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Could not resolve the latest GitHub Release."
+              }
+          }
+
+          $releaseTag = $releaseTag.Trim()
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+              throw "No GitHub Release tag was found."
+          }
+
+          gh release upload $releaseTag $env:RELEASE_ASSET `
+              --repo $env:GITHUB_REPOSITORY `
+              --clobber
+
+          if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload $env:RELEASE_ASSET to release $releaseTag."
+          }
