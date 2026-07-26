@@ -15,8 +15,196 @@ using System.Runtime.InteropServices;
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
 {
-	    public partial class Model : RefObject
-	    {
+    public partial class Model : RefObject
+    {
+        private void EnsureLocalBounds()
+        {
+            if (!localBoundsDirty)
+            {
+                return;
+            }
+
+            if (Positions == null || Positions.Count == 0)
+            {
+                localBoundsCenter = Vector3.Zero;
+                localBoundsRadius = 0f;
+                localBoundsDirty = false;
+                return;
+            }
+
+            bool hasAny = false;
+            Vector3 min = default;
+            Vector3 max = default;
+            for (int i = 0; i < Positions.Count; i++)
+            {
+                var submeshPositions = Positions[i];
+                if (submeshPositions == null || submeshPositions.Length == 0)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < submeshPositions.Length; j++)
+                {
+                    var p = submeshPositions[j];
+                    if (!hasAny)
+                    {
+                        min = p;
+                        max = p;
+                        hasAny = true;
+                    }
+                    else
+                    {
+                        min = Vector3.ComponentMin(min, p);
+                        max = Vector3.ComponentMax(max, p);
+                    }
+                }
+            }
+
+            if (!hasAny)
+            {
+                localBoundsCenter = Vector3.Zero;
+                localBoundsRadius = 0f;
+                localBoundsDirty = false;
+                return;
+            }
+
+            localBoundsCenter = (min + max) * 0.5f;
+            float radius = 0f;
+            for (int i = 0; i < Positions.Count; i++)
+            {
+                var submeshPositions = Positions[i];
+                if (submeshPositions == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < submeshPositions.Length; j++)
+                {
+                    float dist = (submeshPositions[j] - localBoundsCenter).Length;
+                    if (dist > radius)
+                    {
+                        radius = dist;
+                    }
+                }
+            }
+
+            localBoundsRadius = radius;
+            localBoundsDirty = false;
+        }
+
+        public (Vector3 Center, float Radius) GetApproximateWorldBounds()
+        {
+            EnsureLocalBounds();
+            var center4 = new Vector4(localBoundsCenter.X, localBoundsCenter.Y, localBoundsCenter.Z, 1f) * modelMat;
+            float scaleX = new Vector3(modelMat.M11, modelMat.M12, modelMat.M13).Length;
+            float scaleY = new Vector3(modelMat.M21, modelMat.M22, modelMat.M23).Length;
+            float scaleZ = new Vector3(modelMat.M31, modelMat.M32, modelMat.M33).Length;
+            float maxScale = MathF.Max(scaleX, MathF.Max(scaleY, scaleZ));
+            return (center4.Xyz, localBoundsRadius * maxScale);
+        }
+
+        public (int DrawCalls, long Triangles) GetOpaqueGeometryContribution()
+        {
+            if (!IsVisible || !IsGpuSetupComplete || VAOs == null || Indices == null)
+            {
+                return (0, 0);
+            }
+
+            int drawCalls = 0;
+            long triangles = 0;
+            for (int i = 0; i < VAOs.Length; i++)
+            {
+                if (submeshVisible != null && i < submeshVisible.Length && !submeshVisible[i])
+                {
+                    continue;
+                }
+
+                bool drawOpaque = true;
+                if (materials != null && materials.Length > 0)
+                {
+                    if (!materialMap.TryGetValue(MaterialNames[i], out var mat))
+                    {
+                        mat = materials[0];
+                    }
+
+                    drawOpaque = !mat.IsTransparent;
+                }
+
+                if (!drawOpaque)
+                {
+                    continue;
+                }
+
+                drawCalls++;
+                if (i < Indices.Count)
+                {
+                    triangles += Indices[i].Length / 3;
+                }
+            }
+
+            return (drawCalls, triangles);
+        }
+
+        public bool IsEligibleForMergedStaticBatch()
+        {
+            return GetMergedStaticBatchRejectReason() == null;
+        }
+
+        public string? GetMergedStaticBatchRejectReason()
+        {
+            if (armature != null)
+            {
+                return "armature";
+            }
+
+            for (int i = 0; i < HasSkinning.Count; i++)
+            {
+                if (HasSkinning[i])
+                {
+                    return "skinned-submesh";
+                }
+            }
+
+            return null;
+        }
+
+        public IEnumerable<(string MaterialName, int DrawCalls, long Triangles)> EnumerateOpaqueMaterialContributions()
+        {
+            if (!IsVisible || !IsGpuSetupComplete || VAOs == null || Indices == null)
+            {
+                yield break;
+            }
+
+            for (int i = 0; i < VAOs.Length; i++)
+            {
+                if (submeshVisible != null && i < submeshVisible.Length && !submeshVisible[i])
+                {
+                    continue;
+                }
+
+                string materialName = i < MaterialNames.Count ? MaterialNames[i] : string.Empty;
+                bool drawOpaque = true;
+                if (materials != null && materials.Length > 0)
+                {
+                    if (!materialMap.TryGetValue(materialName, out var mat))
+                    {
+                        mat = materials[0];
+                    }
+
+                    drawOpaque = !mat.IsTransparent;
+                    materialName = mat?.Name ?? materialName;
+                }
+
+                if (!drawOpaque)
+                {
+                    continue;
+                }
+
+                long triangles = i < Indices.Count ? Indices[i].Length / 3 : 0;
+                yield return (materialName ?? string.Empty, 1, triangles);
+            }
+        }
+
         public override void Setup()
         {
             BeginGpuSetup();

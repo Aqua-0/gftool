@@ -88,11 +88,45 @@ namespace GFTool.Renderer
         {
             public readonly long GeometryAllocBytes;
             public readonly PerfCounters.Snapshot Counters;
+            public readonly PerfGeometryBreakdown GeometryBreakdown;
 
-            public PerfFrameStats(long geometryAllocBytes, PerfCounters.Snapshot counters)
+            public PerfFrameStats(long geometryAllocBytes, PerfCounters.Snapshot counters, PerfGeometryBreakdown geometryBreakdown)
             {
                 GeometryAllocBytes = geometryAllocBytes;
                 Counters = counters;
+                GeometryBreakdown = geometryBreakdown;
+            }
+        }
+
+        public readonly struct PerfGeometryEntry
+        {
+            public readonly string Name;
+            public readonly int DrawCalls;
+            public readonly long Triangles;
+
+            public PerfGeometryEntry(string name, int drawCalls, long triangles)
+            {
+                Name = name ?? string.Empty;
+                DrawCalls = drawCalls;
+                Triangles = triangles;
+            }
+        }
+
+        public readonly struct PerfGeometryBreakdown
+        {
+            public readonly PerfGeometryEntry[] TopModels;
+            public readonly PerfGeometryEntry[] TopMaterials;
+            public readonly int TotalModels;
+            public readonly int VisibleModels;
+            public readonly int CulledModels;
+
+            public PerfGeometryBreakdown(PerfGeometryEntry[] topModels, PerfGeometryEntry[] topMaterials, int totalModels, int visibleModels, int culledModels)
+            {
+                TopModels = topModels ?? System.Array.Empty<PerfGeometryEntry>();
+                TopMaterials = topMaterials ?? System.Array.Empty<PerfGeometryEntry>();
+                TotalModels = totalModels;
+                VisibleModels = visibleModels;
+                CulledModels = culledModels;
             }
         }
 

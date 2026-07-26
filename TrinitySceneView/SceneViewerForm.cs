@@ -25,6 +25,9 @@ namespace TrinitySceneView
         private bool suppressModelListEvents;
         private readonly List<LoadedSceneModelInstance> loadedSceneModelInstances = new();
 
+        private bool SceneDiagnosticsEnabled => config.SceneDiagnosticsLogs;
+        private string SceneDiagnosticsTarget => config.SceneDiagnosticsTarget?.Trim() ?? string.Empty;
+
         public SceneViewerForm()
         {
             InitializeComponent();
@@ -32,16 +35,22 @@ namespace TrinitySceneView
             config = SceneViewerConfig.Load();
             assetRoot = string.IsNullOrWhiteSpace(config.AssetRoot) ? null : config.AssetRoot;
             MessageHandler.Instance.DebugLogsEnabled = config.DebugLogs;
+            RenderOptions.EnablePerfHud = config.EnablePerfHud;
+            RenderOptions.EnablePerfSpikeLog = config.EnablePerfSpikeLog;
+            RenderOptions.AsyncGpuWorkBudgetMs = config.AsyncGpuWorkBudgetMs > 0f ? config.AsyncGpuWorkBudgetMs : 3.0f;
             ApplyTheme();
             RebuildSceneAssetProvider();
             InitializeEventViewerTab();
             InitializeNpcActorsTab();
+            InitializePerfHud();
             FormClosed += (_, _) =>
             {
                 try
                 {
                     cameraStatusTimer?.Stop();
                     cameraStatusTimer?.Dispose();
+                    perfHudTimer?.Stop();
+                    perfHudTimer?.Dispose();
                 }
                 catch { }
 
@@ -145,6 +154,50 @@ namespace TrinitySceneView
             };
             viewToolStripMenuItem.DropDownItems.Add(debugLogsItem);
 
+            var sceneDiagnosticsItem = new ToolStripMenuItem("Scene Diagnostics")
+            {
+                CheckOnClick = true,
+                Checked = config.SceneDiagnosticsLogs
+            };
+            sceneDiagnosticsItem.CheckedChanged += (_, _) =>
+            {
+                config.SceneDiagnosticsLogs = sceneDiagnosticsItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(MessageType.LOG, $"[Logs] Scene diagnostics {(config.SceneDiagnosticsLogs ? "enabled" : "disabled")}.");
+            };
+            viewToolStripMenuItem.DropDownItems.Add(sceneDiagnosticsItem);
+
+            var sceneDiagnosticsTargetItem = new ToolStripMenuItem("Scene Diagnostics Target...");
+            sceneDiagnosticsTargetItem.Click += (_, _) => ShowSceneDiagnosticsTargetDialog();
+            viewToolStripMenuItem.DropDownItems.Add(sceneDiagnosticsTargetItem);
+
+            var perfHudItem = new ToolStripMenuItem("Performance HUD")
+            {
+                CheckOnClick = true,
+                Checked = config.EnablePerfHud
+            };
+            perfHudItem.CheckedChanged += (_, _) =>
+            {
+                config.EnablePerfHud = perfHudItem.Checked;
+                config.Save();
+                RenderOptions.EnablePerfHud = config.EnablePerfHud;
+                SetPerfHudVisible(config.EnablePerfHud);
+            };
+            viewToolStripMenuItem.DropDownItems.Add(perfHudItem);
+
+            var perfSpikeLogItem = new ToolStripMenuItem("Log Performance Spikes")
+            {
+                CheckOnClick = true,
+                Checked = config.EnablePerfSpikeLog
+            };
+            perfSpikeLogItem.CheckedChanged += (_, _) =>
+            {
+                config.EnablePerfSpikeLog = perfSpikeLogItem.Checked;
+                config.Save();
+                RenderOptions.EnablePerfSpikeLog = config.EnablePerfSpikeLog;
+            };
+            viewToolStripMenuItem.DropDownItems.Add(perfSpikeLogItem);
+
             var originItem = new ToolStripMenuItem("Spawn Models At Origin")
             {
                 CheckOnClick = true,
@@ -176,6 +229,67 @@ namespace TrinitySceneView
                     $"[Scene] Large clip planes {(config.LargeClipPlanes ? "enabled" : "disabled")}.");
             };
             previewToolStripMenuItem.DropDownItems.Add(clipItem);
+
+            var npcSpawnerLoadItem = new ToolStripMenuItem("Load NPC/Spawner Models")
+            {
+                CheckOnClick = true,
+                Checked = config.LoadNpcSpawnerModels
+            };
+            npcSpawnerLoadItem.CheckedChanged += (_, _) =>
+            {
+                config.LoadNpcSpawnerModels = npcSpawnerLoadItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Scene] NPC/spawner model loading {(config.LoadNpcSpawnerModels ? "enabled" : "disabled")}.");
+            };
+            previewToolStripMenuItem.DropDownItems.Add(npcSpawnerLoadItem);
+
+            var streamingSubScenesItem = new ToolStripMenuItem("Load Streaming Group SubScenes")
+            {
+                CheckOnClick = true,
+                Checked = config.LoadStreamingGroupSubScenes
+            };
+            streamingSubScenesItem.CheckedChanged += (_, _) =>
+            {
+                config.LoadStreamingGroupSubScenes = streamingSubScenesItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Scene] Streaming group subscene loading {(config.LoadStreamingGroupSubScenes ? "enabled" : "disabled")}. Reload the scene to apply.");
+            };
+            previewToolStripMenuItem.DropDownItems.Add(streamingSubScenesItem);
+
+            var legacySceneCorrectionItem = new ToolStripMenuItem("Apply Legacy Scene Correction")
+            {
+                CheckOnClick = true,
+                Checked = config.ApplyLegacySceneCorrection
+            };
+            legacySceneCorrectionItem.CheckedChanged += (_, _) =>
+            {
+                config.ApplyLegacySceneCorrection = legacySceneCorrectionItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Scene] Legacy scene correction {(config.ApplyLegacySceneCorrection ? "enabled" : "disabled")}.");
+            };
+            previewToolStripMenuItem.DropDownItems.Add(legacySceneCorrectionItem);
+
+            var sceneDebugRotationItem = new ToolStripMenuItem("Scene Debug Transform...");
+            sceneDebugRotationItem.Click += (_, _) => ShowSceneDebugRotationDialog();
+            previewToolStripMenuItem.DropDownItems.Add(sceneDebugRotationItem);
+
+            var trinsDebugRotationItem = new ToolStripMenuItem("TRINS Debug Rotation...");
+            trinsDebugRotationItem.Click += (_, _) => ShowTrinsDebugRotationDialog();
+            previewToolStripMenuItem.DropDownItems.Add(trinsDebugRotationItem);
+
+            var objectDebugTransformItem = new ToolStripMenuItem("Object Debug Transform...");
+            objectDebugTransformItem.Click += (_, _) => ShowObjectDebugTransformDialog();
+            previewToolStripMenuItem.DropDownItems.Add(objectDebugTransformItem);
+
+            var sceneLoadTuningItem = new ToolStripMenuItem("Scene Load Tuning...");
+            sceneLoadTuningItem.Click += (_, _) => ShowSceneLoadTuningDialog();
+            previewToolStripMenuItem.DropDownItems.Add(sceneLoadTuningItem);
 
             bool updatingRotationUi = false;
 
@@ -364,6 +478,40 @@ namespace TrinitySceneView
                     $"[Scene] Load-all-LODs {(config.LoadAllLods ? "enabled" : "disabled")} (reload to apply).");
             };
             sceneToolStripMenuItem.DropDownItems.Add(lodItem);
+
+            var fastOverviewItem = new ToolStripMenuItem("Fast Overview Loading")
+            {
+                CheckOnClick = true,
+                Checked = config.FastOverviewLoading
+            };
+            fastOverviewItem.CheckedChanged += (_, _) =>
+            {
+                config.FastOverviewLoading = fastOverviewItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Scene] Fast overview loading {(config.FastOverviewLoading ? "enabled" : "disabled")} (reload to apply).");
+            };
+            sceneToolStripMenuItem.DropDownItems.Add(fastOverviewItem);
+
+            var diskCacheItem = new ToolStripMenuItem("Disk Scene Cache")
+            {
+                CheckOnClick = true,
+                Checked = config.DiskSceneCache
+            };
+            diskCacheItem.CheckedChanged += (_, _) =>
+            {
+                config.DiskSceneCache = diskCacheItem.Checked;
+                config.Save();
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[Scene] Disk scene cache {(config.DiskSceneCache ? "enabled" : "disabled")}.");
+            };
+            sceneToolStripMenuItem.DropDownItems.Add(diskCacheItem);
+
+            var clearSceneCacheItem = new ToolStripMenuItem("Clear Scene Disk Cache");
+            clearSceneCacheItem.Click += (_, _) => SceneDiskCache.Clear(config.SceneDiskCacheDirectory);
+            sceneToolStripMenuItem.DropDownItems.Add(clearSceneCacheItem);
 
             var additiveItem = new ToolStripMenuItem("Additive Loads")
             {
@@ -745,6 +893,11 @@ namespace TrinitySceneView
                         if (meta.Data is trinity_ModelComponent mc)
                         {
                             return $"ModelComponent '{mc.FilePath}'";
+                        }
+
+                        if (meta.Data is trinity_ModelInstancerComponent mic)
+                        {
+                            return $"ModelInstancerComponent '{mic.FilePath}'";
                         }
 
                         if (meta.Data is trinity_PropertySheet ps)

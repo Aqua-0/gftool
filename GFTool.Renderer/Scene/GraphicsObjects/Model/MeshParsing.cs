@@ -12,12 +12,24 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Trinity.Core.Flatbuffers.Gfx2;
+using System.Diagnostics;
 
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
 {
 	    public partial class Model : RefObject
 	    {
+        private readonly struct ParsedVertexAttribute
+        {
+            public TRVertexUsage Usage { get; init; }
+            public TRVertexFormat Format { get; init; }
+            public byte[] Bytes { get; init; }
+            public int Stride { get; init; }
+            public int Offset { get; init; }
+            public int Layer { get; init; }
+            public int ReadableVertexCount { get; init; }
+        }
+
         private void ParseMeshBuffer(TRVertexDeclaration vertDesc, TRBuffer[] vertexBuffers, TRBuffer indexBuf, TRIndexFormat polyType, long start, long count, TRBoneWeight[]? boneWeights, string meshName)
         {
             if (vertexBuffers == null || vertexBuffers.Length == 0)
@@ -56,6 +68,41 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 return;
             }
 
+            var parsedAttributes = new List<ParsedVertexAttribute>(vertDesc.vertexElements.Length);
+            for (int i = 0; i < vertDesc.vertexElements.Length; i++)
+            {
+                var att = vertDesc.vertexElements[i];
+                var buffer = GetVertexBuffer(vertexBuffers, att.Slot);
+                if (buffer?.Bytes == null)
+                {
+                    continue;
+                }
+
+                var stride = GetStride(vertDesc, att.Slot);
+                int formatSize = GetFormatByteSize(att.Format);
+                if (stride <= 0 || formatSize <= 0 || att.Offset < 0 || att.Offset + formatSize > buffer.Bytes.Length)
+                {
+                    continue;
+                }
+
+                int readableVertexCount = 1 + ((buffer.Bytes.Length - att.Offset - formatSize) / stride);
+                if (readableVertexCount <= 0)
+                {
+                    continue;
+                }
+
+                parsedAttributes.Add(new ParsedVertexAttribute
+                {
+                    Usage = att.Usage,
+                    Format = att.Format,
+                    Bytes = buffer.Bytes,
+                    Stride = stride,
+                    Offset = att.Offset,
+                    Layer = att.Layer,
+                    ReadableVertexCount = Math.Min(vertexCount, readableVertexCount)
+                });
+            }
+
             Vector3[] pos = new Vector3[vertexCount];
             Vector3[] norm = new Vector3[vertexCount];
             Vector2[] uv = new Vector2[vertexCount];
@@ -75,29 +122,15 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             TRVertexFormat? blendWeightFormat = null;
             blendIndexStats = new BlendIndexStats();
 
-            List<uint> indices = new List<uint>();
-            long currPos = 0;
-
             var blendIndexStreams = new List<Vector4[]>();
             var blendWeightStreams = new List<Vector4[]>();
 
             var uvStreams = new List<Vector2[]>();
             bool colorElementConsumed = false;
 
-            for (int i = 0; i < vertDesc.vertexElements.Length; i++)
+            for (int i = 0; i < parsedAttributes.Count; i++)
             {
-                var att = vertDesc.vertexElements[i];
-                var buffer = GetVertexBuffer(vertexBuffers, att.Slot);
-                if (buffer == null)
-                {
-                    continue;
-                }
-
-                var stride = GetStride(vertDesc, att.Slot);
-                if (stride <= 0)
-                {
-                    continue;
-                }
+                var att = parsedAttributes[i];
 
                 int? blendIndexStreamIndex = null;
                 int? blendWeightStreamIndex = null;
@@ -121,27 +154,23 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     uvStreamIndex = layer;
                 }
 
-                for (int v = 0; v < vertexCount; v++)
+                for (int v = 0; v < att.ReadableVertexCount; v++)
                 {
-                    int offset = (v * stride) + att.Offset;
-                    if (!HasBytes(buffer.Bytes, offset, att.Format))
-                    {
-                        continue;
-                    }
+                    int offset = (v * att.Stride) + att.Offset;
 
                     switch (att.Usage)
                     {
                         case TRVertexUsage.POSITION:
-                            pos[v] = ReadVector3(buffer.Bytes, offset, att.Format);
+                            pos[v] = ReadVector3(att.Bytes, offset, att.Format);
                             break;
                         case TRVertexUsage.NORMAL:
-                            norm[v] = ReadNormal(buffer.Bytes, offset, att.Format);
+                            norm[v] = ReadNormal(att.Bytes, offset, att.Format);
                             hasNormals = true;
                             break;
                         case TRVertexUsage.TEX_COORD:
                             if (uvStreamIndex.HasValue)
                             {
-                                uvStreams[uvStreamIndex.Value][v] = ReadVector2(buffer.Bytes, offset, att.Format);
+                                uvStreams[uvStreamIndex.Value][v] = ReadVector2(att.Bytes, offset, att.Format);
                             }
                             hasUvs = true;
                             break;
@@ -150,22 +179,22 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                             {
                                 break;
                             }
-                            color[v] = ReadColor(buffer.Bytes, offset, att.Format);
+                            color[v] = ReadColor(att.Bytes, offset, att.Format);
                             hasColors = true;
                             colorElementConsumed = true;
                             break;
                         case TRVertexUsage.TANGENT:
-                            tangent[v] = ReadTangent(buffer.Bytes, offset, att.Format);
+                            tangent[v] = ReadTangent(att.Bytes, offset, att.Format);
                             hasTangents = true;
                             break;
                         case TRVertexUsage.BINORMAL:
-                            binormal[v] = ReadNormal(buffer.Bytes, offset, att.Format);
+                            binormal[v] = ReadNormal(att.Bytes, offset, att.Format);
                             hasBinormals = true;
                             break;
                         case TRVertexUsage.BLEND_INDEX:
                             if (blendIndexStreamIndex.HasValue)
                             {
-                                blendIndexStreams[blendIndexStreamIndex.Value][v] = ReadBlendIndices(buffer.Bytes, offset, att.Format);
+                                blendIndexStreams[blendIndexStreamIndex.Value][v] = ReadBlendIndices(att.Bytes, offset, att.Format);
                             }
                             hasBlendIndices = true;
                             blendIndexFormat ??= att.Format;
@@ -173,7 +202,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                         case TRVertexUsage.BLEND_WEIGHTS:
                             if (blendWeightStreamIndex.HasValue)
                             {
-                                blendWeightStreams[blendWeightStreamIndex.Value][v] = ReadBlendWeights(buffer.Bytes, offset, att.Format);
+                                blendWeightStreams[blendWeightStreamIndex.Value][v] = ReadBlendWeights(att.Bytes, offset, att.Format);
                             }
                             hasBlendWeights = true;
                             blendWeightFormat ??= att.Format;
@@ -288,38 +317,30 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     $"[SkinFmt] mesh={meshName} blendIndexFmt={(blendIndexFormat?.ToString() ?? "<none>")} blendWeightFmt={(blendWeightFormat?.ToString() ?? "<none>")}");
             }
 
-            //Parse index buffer
-            using (var indBuf = new BinaryReader(new MemoryStream(indexBuf.Bytes)))
-            {
-                int indsize = (1 << (int)polyType);
-                currPos = start * indsize;
-                indBuf.BaseStream.Position = currPos;
-                while (currPos < (start + count) * indsize)
-                {
-                    switch (polyType)
-                    {
-                        case TRIndexFormat.BYTE: indices.Add(indBuf.ReadByte()); break;
-                        case TRIndexFormat.SHORT: indices.Add(indBuf.ReadUInt16()); break;
-                        case TRIndexFormat.INT: indices.Add(indBuf.ReadUInt32()); break;
-                    }
-                    currPos += indsize;
-                }
-                Indices.Add(indices.ToArray());
-            }
-
+            Indices.Add(ParseIndices(indexBuf.Bytes, polyType, start, count));
+            localBoundsDirty = true;
         }
 
         private void ParseMesh(string file)
         {
+            long parseStart = Stopwatch.GetTimestamp();
+            long meshReadStart = Stopwatch.GetTimestamp();
             var mshBytes = assetProvider.ReadAllBytes(file);
             var msh = FlatBufferConverter.DeserializeFrom<TRMSH>(mshBytes);
             var buffers = LoadFlat<TRMBF>(modelPath.Combine(msh.bufferFilePath)).TRMeshBuffers;
+            prepareMeshReadMs += Stopwatch.GetElapsedTime(meshReadStart).TotalMilliseconds;
 
             // Best-effort: parse morph metadata (names + vertex-layer mapping) from the mesh metadata schema.
             // The main renderer path does not depend on this, and it may fail for non-matching variants.
-            TryRegisterFullMorphTargets(mshBytes, msh, buffers);
+            if (enableCpuMorphRegistration)
+            {
+                long morphStart = Stopwatch.GetTimestamp();
+                TryRegisterFullMorphTargets(mshBytes, msh, buffers);
+                prepareMeshMorphMs += Stopwatch.GetElapsedTime(morphStart).TotalMilliseconds;
+            }
 
-            var shapeCnt = msh.Meshes.Count();
+            var shapeCnt = msh.Meshes.Length;
+            long decodeStart = Stopwatch.GetTimestamp();
             for (int i = 0; i < shapeCnt; i++)
             {
                 var meshShape = msh.Meshes[i];
@@ -372,7 +393,108 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     }
                 }
             }
+            prepareMeshDecodeMs += Stopwatch.GetElapsedTime(decodeStart).TotalMilliseconds;
 
+            prepareMeshMs += Stopwatch.GetElapsedTime(parseStart).TotalMilliseconds;
+            prepareMeshCount++;
+
+        }
+
+        private static uint[] ParseIndices(byte[] bytes, TRIndexFormat polyType, long start, long count)
+        {
+            if (bytes == null || count <= 0 || start < 0)
+            {
+                return Array.Empty<uint>();
+            }
+
+            int indexCount = (int)Math.Min(count, int.MaxValue);
+            var indices = new uint[indexCount];
+
+            switch (polyType)
+            {
+                case TRIndexFormat.BYTE:
+                {
+                    int baseOffset = (int)start;
+                    for (int i = 0; i < indexCount; i++)
+                    {
+                        int offset = baseOffset + i;
+                        if ((uint)offset >= (uint)bytes.Length)
+                        {
+                            return TrimIndices(indices, i);
+                        }
+
+                        indices[i] = bytes[offset];
+                    }
+                    return indices;
+                }
+                case TRIndexFormat.SHORT:
+                {
+                    int baseOffset = checked((int)(start * sizeof(ushort)));
+                    for (int i = 0; i < indexCount; i++)
+                    {
+                        int offset = baseOffset + (i * sizeof(ushort));
+                        if (offset + sizeof(ushort) > bytes.Length)
+                        {
+                            return TrimIndices(indices, i);
+                        }
+
+                        indices[i] = BitConverter.ToUInt16(bytes, offset);
+                    }
+                    return indices;
+                }
+                case TRIndexFormat.INT:
+                {
+                    int baseOffset = checked((int)(start * sizeof(uint)));
+                    for (int i = 0; i < indexCount; i++)
+                    {
+                        int offset = baseOffset + (i * sizeof(uint));
+                        if (offset + sizeof(uint) > bytes.Length)
+                        {
+                            return TrimIndices(indices, i);
+                        }
+
+                        indices[i] = BitConverter.ToUInt32(bytes, offset);
+                    }
+                    return indices;
+                }
+                default:
+                    return Array.Empty<uint>();
+            }
+        }
+
+        private static uint[] TrimIndices(uint[] source, int length)
+        {
+            if (length <= 0)
+            {
+                return Array.Empty<uint>();
+            }
+
+            if (length == source.Length)
+            {
+                return source;
+            }
+
+            var result = new uint[length];
+            Array.Copy(source, result, length);
+            return result;
+        }
+
+        private static int GetFormatByteSize(TRVertexFormat format)
+        {
+            return format switch
+            {
+                TRVertexFormat.X32_Y32_Z32_FLOAT => 12,
+                TRVertexFormat.X32_Y32_FLOAT => 8,
+                TRVertexFormat.W32_X32_Y32_Z32_FLOAT => 16,
+                TRVertexFormat.W32_X32_Y32_Z32_UNSIGNED => 16,
+                TRVertexFormat.W16_X16_Y16_Z16_FLOAT => 8,
+                TRVertexFormat.W16_X16_Y16_Z16_UNSIGNED_NORMALIZED => 8,
+                TRVertexFormat.R8_G8_B8_A8_UNSIGNED_NORMALIZED => 4,
+                TRVertexFormat.W8_X8_Y8_Z8_UNSIGNED => 4,
+                TRVertexFormat.R32_UNSIGNED => 4,
+                TRVertexFormat.R32_SIGNED => 4,
+                _ => 0
+            };
         }
 
         private void TryRegisterFullMorphTargets(byte[] trmshBytes, TRMSH trmsh, TRModelBuffer[] buffers)

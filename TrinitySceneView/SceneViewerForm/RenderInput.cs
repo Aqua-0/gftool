@@ -47,8 +47,11 @@ namespace TrinitySceneView
             string mode = eventUseCameraCheckBox?.Checked == true ? "EventCam" : "FreeCam";
             string rot = (config.RotateModels180X ? "RotX" : config.RotateModels180Y ? "RotY" : "RotNone");
             string map = $"MapA={(config.ApplySceneRotationToActors ? "On" : "Off")} MapC={(config.ApplySceneRotationToEventCamera ? "On" : "Off")}";
+            string perf = renderCtrl.ApproxFrameMs > 0.0001f
+                ? $" FPS={renderCtrl.ApproxFps:0.0} Frame={renderCtrl.ApproxFrameMs:0.00}ms"
+                : string.Empty;
 
-            var text = $"Camera({mode},{rot},{map}) Pos={cam.Position} Euler={euler}";
+            var text = $"Camera({mode},{rot},{map}) Pos={cam.Position} Euler={euler}{perf}";
 
             // When using event cam, show the raw script camera too so coords can be compared.
             if (eventShowCameraCheckBox?.Checked == true || eventUseCameraCheckBox?.Checked == true)

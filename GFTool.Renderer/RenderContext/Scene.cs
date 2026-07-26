@@ -18,7 +18,7 @@ namespace GFTool.Renderer
 {
     public partial class RenderContext : IDisposable
     {
-        internal void AddSceneModelDeferred(Model model)
+        public void AddSceneModelDeferred(Model model)
         {
             if (model == null)
             {

@@ -384,6 +384,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             {
                 "Opaque" => "Standard",
                 "Transparent" => "Transparent",
+                "BGTransparent" => "Transparent",
                 "Hair" => "Hair",
                 "SSS" => "SSS",
                 "InsideEmissionParallax" => "InsideEmissionParallax",

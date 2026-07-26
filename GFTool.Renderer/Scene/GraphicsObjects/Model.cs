@@ -11,6 +11,7 @@ using Trinity.Core.Assets;
 using System.Collections.Generic;
 using System.Linq;
 using Trinity.Core.Flatbuffers.Gfx2;
+using System.Diagnostics;
 
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
@@ -18,6 +19,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	    public partial class Model : RefObject
 	    {
         private readonly IAssetProvider assetProvider;
+        private readonly bool enableCpuMorphRegistration;
         private PathString modelPath;
         private string trmdlSourcePath;
         private bool loadedAllLods;
@@ -67,6 +69,9 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         private static readonly float[] unitBoneVerts = BuildUnitBoneVerts();
 
         private Matrix4 modelMat;
+        private bool localBoundsDirty = true;
+        private Vector3 localBoundsCenter;
+        private float localBoundsRadius;
         private int selectedSubmeshIndex = -1;
         private BlendIndexStats blendIndexStats = new BlendIndexStats();
         private int[] blendIndexOffsets = Array.Empty<int>();
@@ -84,13 +89,16 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
         }
 
         public Model(string model, bool loadAllLods)
-            : this(new DiskAssetProvider(), model, loadAllLods)
+            : this(new DiskAssetProvider(), model, loadAllLods, enableCpuMorphRegistration: true)
         {
         }
 
-	        public Model(IAssetProvider assetProvider, string model, bool loadAllLods)
-	        {
-	            this.assetProvider = assetProvider ?? throw new ArgumentNullException(nameof(assetProvider));
+        public Model(IAssetProvider assetProvider, string model, bool loadAllLods, bool enableCpuMorphRegistration = true)
+        {
+            this.assetProvider = assetProvider ?? throw new ArgumentNullException(nameof(assetProvider));
+                this.enableCpuMorphRegistration = enableCpuMorphRegistration;
+                var prepareStopwatch = Stopwatch.StartNew();
+                ResetPreparePerfStats();
 	            ClearDirtyFlags();
 	            Name = Path.GetFileNameWithoutExtension(model);
 	            modelMat = Matrix4.Identity;
@@ -99,32 +107,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	            loadedAllLods = loadAllLods;
 	            preferredMaterialMetadataPath = Path.ChangeExtension(model, ".trmmt");
 
-	            var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(this.assetProvider.ReadAllBytes(model));
-
-            //Meshes
-            if (mdl.Meshes == null || mdl.Meshes.Length == 0)
-            {
-                MessageHandler.Instance.AddMessage(
-                    MessageType.WARNING,
-                    $"[TRMDL] '{model}': no meshes (Meshes.Length=0).");
-            }
-            else if (loadAllLods)
-            {
-                foreach (var mesh in mdl.Meshes)
-                {
-                    var meshPath = modelPath.Combine(mesh.PathName);
-                    loadedMeshFiles.Add(meshPath);
-                    ParseMesh(meshPath);
-                }
-            }
-            else
-            {
-                var mesh = mdl.Meshes[0]; //LOD0
-                var meshPath = modelPath.Combine(mesh.PathName);
-                loadedMeshFiles.Add(meshPath);
-                ParseMesh(meshPath);
-            }
-
+            var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(this.assetProvider.ReadAllBytes(model));
             baseSkeletonCategoryHint = GuessBaseSkeletonCategory(
                 model,
                 mdl.Meshes != null && mdl.Meshes.Length > 0 ? mdl.Meshes[0].PathName : null,
@@ -135,37 +118,15 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                     MessageType.LOG,
                     $"[TRSKL] baseHint='{baseSkeletonCategoryHint ?? "<none>"}' trmdl='{model}' skel='{mdl.Skeleton?.PathName ?? "<none>"}' mesh='{(mdl.Meshes != null && mdl.Meshes.Length > 0 ? mdl.Meshes[0].PathName : "<none>")}'");
             }
-
-            //Materials
-            if (mdl.Materials != null && mdl.Materials.Length > 0)
+            ParseMeshes(mdl, model, loadAllLods);
+            string? chosenMaterialPath = ResolveChosenMaterialPath(mdl);
+            if (chosenMaterialPath != null)
             {
-                // because ParseMaterial() replaces the whole runtime material set. Avoid repeated reparses.
-                var resolvedMaterials = new List<string>(mdl.Materials.Length);
-                foreach (var mat in mdl.Materials)
-                {
-                    if (string.IsNullOrWhiteSpace(mat))
-                    {
-                        continue;
-                    }
-                    resolvedMaterials.Add(ResolveTrmtrPath(modelPath.Combine(mat), this.assetProvider));
-                }
-
-                if (resolvedMaterials.Count > 0)
-                {
-                    var chosen = resolvedMaterials[resolvedMaterials.Count - 1];
-                    if (MessageHandler.Instance.DebugLogsEnabled && resolvedMaterials.Count > 1)
-                    {
-                        MessageHandler.Instance.AddMessage(
-                            MessageType.LOG,
-                            $"[TRMDL] Multiple material paths ({resolvedMaterials.Count}); using '{chosen}'");
-                    }
-                    ParseMaterial(chosen);
-                }
+                ParseMaterial(chosenMaterialPath);
             }
 
             defaultMaterialFilePath = currentMaterialFilePath;
 
-            //Skeleton
             if (mdl.Skeleton != null)
             {
                 if (!string.IsNullOrWhiteSpace(mdl.Skeleton.PathName))
@@ -183,6 +144,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             ResolveRigidParentAttachments();
+                prepareStopwatch.Stop();
+                FinalizePreparePerfStats(prepareStopwatch.Elapsed.TotalMilliseconds);
         }
 
         public void ReloadFromTrmdlSource(string trmdlPath, bool loadAllLods)
@@ -192,6 +155,8 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 throw new ArgumentException("Missing TRMDL path.", nameof(trmdlPath));
             }
 
+            var prepareStopwatch = Stopwatch.StartNew();
+            ResetPreparePerfStats();
             ClearDirtyFlags();
             trmdlSourcePath = trmdlPath;
             loadedAllLods = loadAllLods;
@@ -276,51 +241,19 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
             var mdl = FlatBufferConverter.DeserializeFrom<TRMDL>(assetProvider.ReadAllBytes(trmdlPath));
 
-            // Meshes
-            if (loadAllLods)
-            {
-                foreach (var mesh in mdl.Meshes)
-                {
-                    var meshPath = modelPath.Combine(mesh.PathName);
-                    loadedMeshFiles.Add(meshPath);
-                    ParseMesh(meshPath);
-                }
-            }
-            else
-            {
-                var mesh = mdl.Meshes[0]; // LOD0
-                var meshPath = modelPath.Combine(mesh.PathName);
-                loadedMeshFiles.Add(meshPath);
-                ParseMesh(meshPath);
-            }
-
             baseSkeletonCategoryHint = GuessBaseSkeletonCategory(
                 trmdlPath,
                 mdl.Meshes != null && mdl.Meshes.Length > 0 ? mdl.Meshes[0].PathName : null,
                 mdl.Skeleton?.PathName);
-
-            // Materials
-            if (mdl.Materials != null && mdl.Materials.Length > 0)
+            ParseMeshes(mdl, trmdlPath, loadAllLods);
+            string? chosenMaterialPath = ResolveChosenMaterialPath(mdl);
+            if (chosenMaterialPath != null)
             {
-                var resolvedMaterials = new List<string>(mdl.Materials.Length);
-                foreach (var mat in mdl.Materials)
-                {
-                    if (string.IsNullOrWhiteSpace(mat))
-                    {
-                        continue;
-                    }
-                    resolvedMaterials.Add(ResolveTrmtrPath(modelPath.Combine(mat), this.assetProvider));
-                }
-
-                if (resolvedMaterials.Count > 0)
-                {
-                    ParseMaterial(resolvedMaterials[resolvedMaterials.Count - 1]);
-                }
+                ParseMaterial(chosenMaterialPath);
             }
 
             defaultMaterialFilePath = currentMaterialFilePath;
 
-            // Skeleton
             if (mdl.Skeleton != null)
             {
                 if (!string.IsNullOrWhiteSpace(mdl.Skeleton.PathName))
@@ -338,6 +271,69 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             ResolveRigidParentAttachments();
+            prepareStopwatch.Stop();
+            FinalizePreparePerfStats(prepareStopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        private void ParseMeshes(TRMDL mdl, string trmdlPath, bool loadAllLods)
+        {
+            if (mdl.Meshes == null || mdl.Meshes.Length == 0)
+            {
+                MessageHandler.Instance.AddMessage(
+                    MessageType.WARNING,
+                    $"[TRMDL] '{trmdlPath}': no meshes (Meshes.Length=0).");
+                return;
+            }
+
+            if (loadAllLods)
+            {
+                foreach (var mesh in mdl.Meshes)
+                {
+                    var meshPath = modelPath.Combine(mesh.PathName);
+                    loadedMeshFiles.Add(meshPath);
+                    ParseMesh(meshPath);
+                }
+                return;
+            }
+
+            var lod0 = mdl.Meshes[0];
+            var lod0Path = modelPath.Combine(lod0.PathName);
+            loadedMeshFiles.Add(lod0Path);
+            ParseMesh(lod0Path);
+        }
+
+        private string? ResolveChosenMaterialPath(TRMDL mdl)
+        {
+            if (mdl.Materials == null || mdl.Materials.Length == 0)
+            {
+                return null;
+            }
+
+            var resolvedMaterials = new List<string>(mdl.Materials.Length);
+            foreach (var mat in mdl.Materials)
+            {
+                if (string.IsNullOrWhiteSpace(mat))
+                {
+                    continue;
+                }
+
+                resolvedMaterials.Add(ResolveTrmtrPath(modelPath.Combine(mat), this.assetProvider));
+            }
+
+            if (resolvedMaterials.Count == 0)
+            {
+                return null;
+            }
+
+            var chosen = resolvedMaterials[resolvedMaterials.Count - 1];
+            if (MessageHandler.Instance.DebugLogsEnabled && resolvedMaterials.Count > 1)
+            {
+                MessageHandler.Instance.AddMessage(
+                    MessageType.LOG,
+                    $"[TRMDL] Multiple material paths ({resolvedMaterials.Count}); using '{chosen}'");
+            }
+
+            return chosen;
         }
 
 	        private bool TryParseBaseArmature(string trmdlPath, string? category)

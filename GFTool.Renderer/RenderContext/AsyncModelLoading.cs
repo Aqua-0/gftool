@@ -3,6 +3,7 @@ using GFTool.Renderer.Scene.GraphicsObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Trinity.Core.Assets;
@@ -30,6 +31,13 @@ namespace GFTool.Renderer
             }, token);
 
             progress?.Report(0.30f);
+
+            return await AddPreparedSceneModelAsync(model, token, progress);
+        }
+
+        public async Task<Model> AddPreparedSceneModelAsync(Model model, CancellationToken token = default, IProgress<float>? progress = null)
+        {
+            if (model == null) throw new ArgumentNullException(nameof(model));
 
             AddSceneModelDeferred(model);
 
@@ -79,6 +87,13 @@ namespace GFTool.Renderer
             private readonly Texture[] textures;
             private int textureScanStart;
             private int texturesComplete;
+            private readonly Stopwatch stopwatch = Stopwatch.StartNew();
+            private double gpuSetupMs;
+            private double shaderWarmupMs;
+            private double textureUploadMs;
+            private int gpuSetupSteps;
+            private int shaderWarmupSteps;
+            private int textureUploadSteps;
 
             public ModelResourceLoadWorkItem(Model model, CancellationToken token, IProgress<float>? progress, TaskCompletionSource tcs)
             {
@@ -142,7 +157,7 @@ namespace GFTool.Renderer
                     {
                         case Stage.GpuSetup:
                             progress?.Report(0.35f);
-                            if (model.StepGpuSetup())
+                            if (MeasureGpuSetupStep())
                             {
                                 stage = Stage.ShaderWarmup;
                             }
@@ -152,7 +167,7 @@ namespace GFTool.Renderer
                             progress?.Report(0.60f);
                             if (shaderIndex < shaderNames.Length)
                             {
-                                ShaderPool.Instance.GetShader(shaderNames[shaderIndex]);
+                                MeasureShaderWarmupStep(shaderNames[shaderIndex]);
                                 shaderIndex++;
                                 return false;
                             }
@@ -182,7 +197,7 @@ namespace GFTool.Renderer
                                     continue;
                                 }
 
-                                if (tex.TryUploadDecodedOnGlThread())
+                                if (MeasureTextureUploadStep(tex))
                                 {
                                     texturesComplete++;
                                 }
@@ -197,6 +212,16 @@ namespace GFTool.Renderer
 
                         case Stage.Done:
                             progress?.Report(1.0f);
+                            model.SetAsyncLoadPerfStats(new Model.AsyncLoadPerfStats
+                            {
+                                TotalMs = stopwatch.Elapsed.TotalMilliseconds,
+                                GpuSetupMs = gpuSetupMs,
+                                ShaderWarmupMs = shaderWarmupMs,
+                                TextureUploadMs = textureUploadMs,
+                                GpuSetupSteps = gpuSetupSteps,
+                                ShaderWarmupSteps = shaderWarmupSteps,
+                                TextureUploadSteps = textureUploadSteps
+                            });
                             tcs.TrySetResult();
                             return true;
                     }
@@ -209,6 +234,32 @@ namespace GFTool.Renderer
 
                 tcs.TrySetResult();
                 return true;
+            }
+
+            private bool MeasureGpuSetupStep()
+            {
+                long start = Stopwatch.GetTimestamp();
+                bool done = model.StepGpuSetup();
+                gpuSetupMs += Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                gpuSetupSteps++;
+                return done;
+            }
+
+            private void MeasureShaderWarmupStep(string shaderName)
+            {
+                long start = Stopwatch.GetTimestamp();
+                ShaderPool.Instance.GetShader(shaderName);
+                shaderWarmupMs += Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                shaderWarmupSteps++;
+            }
+
+            private bool MeasureTextureUploadStep(Texture texture)
+            {
+                long start = Stopwatch.GetTimestamp();
+                bool uploaded = texture.TryUploadDecodedOnGlThread();
+                textureUploadMs += Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                textureUploadSteps++;
+                return uploaded;
             }
         }
     }

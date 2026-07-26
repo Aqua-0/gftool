@@ -3,6 +3,7 @@ using FlatSharp.Attributes;
 namespace GFTool.Core.Flatbuffers.Hayabusa.Gfx2
 {
     // Minimal instance buffer bindings.
+    [FlatBufferEnum(typeof(uint))]
     public enum InstanceType : uint
     {
         Unknown = 0,

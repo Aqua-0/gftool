@@ -248,5 +248,36 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             ComputeInverseBindMatrices(RenderOptions.UseTrsklInverseBind);
         }
 
+        public bool TryGetRestWorldMatrix(string boneName, out Matrix4 worldMatrix)
+        {
+            worldMatrix = Matrix4.Identity;
+            if (string.IsNullOrWhiteSpace(boneName))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < Bones.Count; i++)
+            {
+                var bone = Bones[i];
+                if (!string.Equals(bone.Name, boneName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var matrix = bone.RestLocalMatrix;
+                var parent = bone.Parent;
+                while (parent != null)
+                {
+                    matrix *= parent.RestLocalMatrix;
+                    parent = parent.Parent;
+                }
+
+                worldMatrix = matrix;
+                return true;
+            }
+
+            return false;
+        }
+
     }
 }

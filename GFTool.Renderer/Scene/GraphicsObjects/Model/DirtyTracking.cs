@@ -15,6 +15,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
         public string TrmdlSourcePath => trmdlSourcePath;
         public string? CurrentSkeletonPath => currentSkeletonPath;
+        public IReadOnlyList<string> LoadedMeshFiles => loadedMeshFiles;
         public IReadOnlyCollection<string> DirtyTrmshPaths => dirtyTrmshPaths;
         public IReadOnlyCollection<string> DirtyTrmbfPaths => dirtyTrmbfPaths;
         public string? DirtyTrmdlPath => dirtyTrmdlPath;

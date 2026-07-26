@@ -709,7 +709,7 @@ namespace TrinitySceneView
 
         private static Matrix4 BuildTransformMatrix(Vector3 pos, Vector3 rotDeg)
         {
-            return Matrix4.CreateTranslation(pos) * Matrix4.CreateFromQuaternion(RotationFromDegrees(rotDeg));
+            return Matrix4.CreateFromQuaternion(RotationFromDegrees(rotDeg)) * Matrix4.CreateTranslation(pos);
         }
 
         private static Quaternion RotationFromDegrees(Vector3 rotDeg)

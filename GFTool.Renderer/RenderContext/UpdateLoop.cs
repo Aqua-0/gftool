@@ -234,7 +234,7 @@ namespace GFTool.Renderer
             {
                 float frameMs = (float)((Stopwatch.GetTimestamp() - perfFrameStart) * 1000.0 / Stopwatch.Frequency);
                 lastPerfFrame = new PerfFrameTiming(frameMs, msUpdateAnimation, msGeometry, msGeometryFinishWait, msLighting, msFinal, msGrid, msSkeleton, msTransparent, msOutline + msParticles, msPresent);
-                lastPerfStats = new PerfFrameStats(allocGeoDelta, PerfCounters.GetSnapshot());
+                lastPerfStats = new PerfFrameStats(allocGeoDelta, PerfCounters.GetSnapshot(), lastPerfStats.GeometryBreakdown);
 
                 if (allocFrameStart != 0)
                 {

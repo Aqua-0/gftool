@@ -11,6 +11,7 @@ using Trinity.Core.Assets;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
@@ -281,6 +282,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
 		        private void ParseMaterial(string file, bool preserveMaterialMetadata)
 		        {
+                    long parseStart = Stopwatch.GetTimestamp();
 		            hasMaterialSourceEdits = false;
 		            currentMaterialFilePath = file;
 		            currentMaterialSetName = null;
@@ -306,17 +308,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 
 			            List<Material> matlist = new List<Material>();
 		            var materialPath = new PathString(file);
+                    long materialReadStart = Stopwatch.GetTimestamp();
 		            var trmtrBytes = assetProvider.ReadAllBytes(file);
-			            TRMTR? legacyTrmtr = null;
-			            try
-			            {
-			                legacyTrmtr = FlatBufferConverter.DeserializeFrom<TRMTR>(trmtrBytes);
-		            }
-		            catch
-		            {
-			                legacyTrmtr = null;
-			            }
+                    prepareMaterialReadMs += Stopwatch.GetElapsedTime(materialReadStart).TotalMilliseconds;
 		            TrmtrFile? trmtr = null;
+                    long deserializeStart = Stopwatch.GetTimestamp();
 		            try
 		            {
 		                trmtr = FlatBufferConverter.DeserializeFrom<TrmtrFile>(trmtrBytes);
@@ -331,6 +327,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 		                        $"[TRMTR] Failed to deserialize TrmtrFile; falling back to legacy TRMTR: '{file}' ({ex.GetType().Name})");
 		                }
 		            }
+                    prepareMaterialDeserializeMs += Stopwatch.GetElapsedTime(deserializeStart).TotalMilliseconds;
 
 		            static bool IsLikelyValid(TrmtrFile candidate)
 		            {
@@ -352,12 +349,6 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 		                    {
 		                        return false;
 		                    }
-
-		                    var textures = mat.Textures;
-		                    if (textures == null || textures.Length == 0)
-		                    {
-		                        return false;
-		                    }
 		                }
 
 		                return true;
@@ -373,12 +364,45 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 		                        $"[TRMTR] TrmtrFile failed validation; falling back to legacy TRMTR: '{file}'");
 		                }
 		            }
-			            var legacySamplersByMaterialName = legacyTrmtr?.Materials?
-			                .Where(m => m != null && !string.IsNullOrWhiteSpace(m.Name))
-			                .ToDictionary(m => m.Name, m => m.Samplers ?? Array.Empty<TRSampler>(), StringComparer.OrdinalIgnoreCase)
-			                ?? new Dictionary<string, TRSampler[]>(StringComparer.OrdinalIgnoreCase);
-				            if (trmtr?.Materials == null || trmtr.Materials.Length == 0)
+
+                    TRMTR? legacyTrmtr = null;
+                    bool requiresLegacyMaterials = trmtr?.Materials == null || trmtr.Materials.Length == 0;
+                    bool mayNeedLegacySamplers =
+                        trmtr?.Materials?.Any(material => material?.Textures != null && material.Textures.Length > 0) == true;
+
+                    if (requiresLegacyMaterials || mayNeedLegacySamplers)
+                    {
+                        long legacyDeserializeStart = Stopwatch.GetTimestamp();
+                        try
+                        {
+                            legacyTrmtr = FlatBufferConverter.DeserializeFrom<TRMTR>(trmtrBytes);
+                        }
+                        catch
+                        {
+                            legacyTrmtr = null;
+                        }
+                        prepareMaterialLegacyDeserializeMs += Stopwatch.GetElapsedTime(legacyDeserializeStart).TotalMilliseconds;
+                    }
+
+                    var legacySamplersByMaterialName =
+                        new Dictionary<string, TRSampler[]>(StringComparer.OrdinalIgnoreCase);
+                    if (legacyTrmtr?.Materials != null)
+                    {
+                        foreach (var legacyMaterial in legacyTrmtr.Materials)
+                        {
+                            if (legacyMaterial == null || string.IsNullOrWhiteSpace(legacyMaterial.Name))
+                            {
+                                continue;
+                            }
+
+                            legacySamplersByMaterialName[legacyMaterial.Name] =
+                                legacyMaterial.Samplers ?? Array.Empty<TRSampler>();
+                        }
+                    }
+
+				            if (requiresLegacyMaterials)
 				            {
+                                long buildStart = Stopwatch.GetTimestamp();
 				                if (legacyTrmtr?.Materials == null || legacyTrmtr.Materials.Length == 0)
 				                {
 				                    MessageHandler.Instance.AddMessage(
@@ -390,10 +414,13 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 				                    BuildMaterialMap();
 				                    ApplyMaterialMetadataOverridesToRuntimeMaterials();
 				                    ApplyMaterialUniformOverridesToRuntimeMaterials();
+                                    prepareMaterialBuildMs += Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
+                                    prepareMaterialMs += Stopwatch.GetElapsedTime(parseStart).TotalMilliseconds;
 				                    return;
 				                }
 
 				                this.shaderGame = ShaderGame.SCVI;
+                                matlist = new List<Material>(legacyTrmtr.Materials.Length);
 				                for (int i = 0; i < legacyTrmtr.Materials.Length; i++)
 				                {
 			                    var src = legacyTrmtr.Materials[i];
@@ -403,28 +430,39 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 			                    }
 			                    matlist.Add(new Material(materialPath, src, assetProvider));
 			                }
+                                prepareMaterialBuildMs += Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
 			            }
 			            else
 			            {
-			                var shaderGame = ResolveEffectiveShaderGame(trmtr, assetProvider);
+                                var validTrmtr = trmtr!;
+                                long buildStart = Stopwatch.GetTimestamp();
+			                var shaderGame = ResolveEffectiveShaderGame(validTrmtr, assetProvider);
 			                this.shaderGame = shaderGame;
+                                matlist = new List<Material>(validTrmtr.Materials.Length);
 
-			                for (int i = 0; i < trmtr.Materials.Length; i++)
-			                {
-			                    var src = trmtr.Materials[i];
-			                    legacySamplersByMaterialName.TryGetValue(src?.Name ?? string.Empty, out var legacySamplers);
-			                    if ((legacySamplers == null || legacySamplers.Length == 0) && legacyTrmtr?.Materials != null && i < legacyTrmtr.Materials.Length)
-			                    {
-			                        legacySamplers = legacyTrmtr.Materials[i]?.Samplers;
-			                    }
-			                    var trmat = ConvertTrmtrMaterial(src, shaderGame, legacySamplers);
-			                    matlist.Add(new Material(materialPath, trmat, assetProvider, src?.RasterizationState, src?.BlendStatePreset));
-			                }
+				                for (int i = 0; i < validTrmtr.Materials.Length; i++)
+				                {
+				                    var src = validTrmtr.Materials[i];
+                                    legacySamplersByMaterialName.TryGetValue(
+                                        src?.Name ?? string.Empty,
+                                        out var legacySamplers);
+                                    if ((legacySamplers == null || legacySamplers.Length == 0) &&
+                                        legacyTrmtr?.Materials != null &&
+                                        i < legacyTrmtr.Materials.Length)
+                                    {
+                                        legacySamplers = legacyTrmtr.Materials[i]?.Samplers;
+                                    }
+
+				                    var trmat = ConvertTrmtrMaterial(src, shaderGame, legacySamplers);
+				                    matlist.Add(new Material(materialPath, trmat, assetProvider, src?.RasterizationState, src?.BlendStatePreset));
+				                }
+                                prepareMaterialBuildMs += Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
 			            }
 					            materials = matlist.ToArray();
 					            BuildMaterialMap();
 					            ApplyMaterialMetadataOverridesToRuntimeMaterials();
 					            ApplyMaterialUniformOverridesToRuntimeMaterials();
+                                prepareMaterialMs += Stopwatch.GetElapsedTime(parseStart).TotalMilliseconds;
 				        }
 
 		        private static Material CreateFallbackUnlitMaterial(PathString materialPath, IAssetProvider assetProvider, string name)
@@ -492,11 +530,11 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                Slot = t?.Slot ?? 0
 	            }).ToArray() ?? Array.Empty<TRTexture>();
 
-	            var samplers = src?.Samplers?.Select(s => new TRSampler
-	            {
-	                State0 = s?.State0 ?? 0,
-	                State1 = s?.State1 ?? 0,
-	                State2 = s?.State2 ?? 0,
+            var samplers = src?.Samplers?.Select(s => new TRSampler
+            {
+                State0 = s?.State0 ?? 0,
+                State1 = s?.State1 ?? 0,
+                State2 = s?.State2 ?? 0,
 	                State3 = s?.State3 ?? 0,
 	                State4 = s?.State4 ?? 0,
 	                State5 = s?.State5 ?? 0,
@@ -504,13 +542,14 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                State7 = s?.State7 ?? 0,
 	                State8 = s?.State8 ?? 0,
 	                RepeatU = s?.RepeatU ?? UVWrapMode.WRAP,
-	                RepeatV = s?.RepeatV ?? UVWrapMode.WRAP,
-	                RepeatW = s?.RepeatW ?? UVWrapMode.WRAP,
-	                BorderColor = s?.BorderColor ?? new Trinity.Core.Flatbuffers.Utils.RGBA(),
-	            }).Select(NormalizeSamplerWrapModes).ToArray() ?? Array.Empty<TRSampler>();
-	            if (legacySamplers != null && legacySamplers.Length > 0)
-	            {
-	                bool shouldPreferLegacy = samplers.Length == 0;
+                RepeatV = s?.RepeatV ?? UVWrapMode.WRAP,
+                RepeatW = s?.RepeatW ?? UVWrapMode.WRAP,
+                BorderColor = s?.BorderColor ?? new Trinity.Core.Flatbuffers.Utils.RGBA(),
+            }).Select(NormalizeSamplerWrapModes).ToArray() ?? Array.Empty<TRSampler>();
+
+            if (legacySamplers != null && legacySamplers.Length > 0)
+            {
+                bool shouldPreferLegacy = samplers.Length == 0;
 	                if (!shouldPreferLegacy)
 	                {
 	                    int check = Math.Min(samplers.Length, legacySamplers.Length);
@@ -544,7 +583,24 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	                    // (defaults to ClampToEdge looks like broken UVs / collapsed previews).
 	                    samplers = legacySamplers.Select(NormalizeLegacySampler).Select(NormalizeSamplerWrapModes).ToArray();
 	                }
+                    else if (legacySamplers.Length > samplers.Length)
+                    {
+                        // The newer schema is authoritative for slots it contains, but some
+                        // files omit trailing sampler records even though their textures use
+                        // those slots. Fill only the missing tail from the legacy schema.
+                        var combined = new TRSampler[legacySamplers.Length];
+                        Array.Copy(samplers, combined, samplers.Length);
+                        for (int i = samplers.Length; i < combined.Length; i++)
+                        {
+                            combined[i] = NormalizeSamplerWrapModes(
+                                NormalizeLegacySampler(legacySamplers[i]));
+                        }
+
+                        samplers = combined;
+                    }
 	            }
+
+            samplers = EnsureSamplersForTextures(textures, samplers);
 
 	            static TRSampler NormalizeLegacySampler(TRSampler srcSampler)
 	            {
@@ -736,6 +792,59 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
             }
 
             return result;
+        }
+
+        private static TRSampler[] EnsureSamplersForTextures(TRTexture[] textures, TRSampler[] existingSamplers)
+        {
+            if (textures == null || textures.Length == 0)
+            {
+                return existingSamplers ?? Array.Empty<TRSampler>();
+            }
+
+            existingSamplers ??= Array.Empty<TRSampler>();
+
+            uint maxSlot = 0;
+            bool hasTextureSlots = false;
+            for (int i = 0; i < textures.Length; i++)
+            {
+                var tex = textures[i];
+                if (tex == null)
+                {
+                    continue;
+                }
+
+                hasTextureSlots = true;
+                if (tex.Slot > maxSlot)
+                {
+                    maxSlot = tex.Slot;
+                }
+            }
+
+            if (!hasTextureSlots)
+            {
+                return existingSamplers;
+            }
+
+            int requiredLength = checked((int)maxSlot + 1);
+            if (existingSamplers.Length >= requiredLength)
+            {
+                return existingSamplers;
+            }
+
+            var expanded = new TRSampler[requiredLength];
+            Array.Copy(existingSamplers, expanded, existingSamplers.Length);
+            for (int i = 0; i < expanded.Length; i++)
+            {
+                expanded[i] ??= new TRSampler
+                {
+                    RepeatU = UVWrapMode.WRAP,
+                    RepeatV = UVWrapMode.WRAP,
+                    RepeatW = UVWrapMode.WRAP,
+                    BorderColor = new Trinity.Core.Flatbuffers.Utils.RGBA(),
+                };
+            }
+
+            return expanded;
         }
 
         private static bool MatchesMaterial(string name, string target)

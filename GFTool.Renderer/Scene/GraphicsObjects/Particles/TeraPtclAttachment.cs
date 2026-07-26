@@ -471,7 +471,10 @@ namespace GFTool.Renderer.Scene.GraphicsObjects.Particles
             Quaternion rot = Quaternion.Identity;
             if (srt.Rotate != null)
             {
-                rot = new Quaternion(srt.Rotate.X, srt.Rotate.Y, srt.Rotate.Z, srt.Rotate.W);
+                float rx = MathHelper.DegreesToRadians(srt.Rotate.X);
+                float ry = MathHelper.DegreesToRadians(srt.Rotate.Y);
+                float rz = MathHelper.DegreesToRadians(srt.Rotate.Z);
+                rot = Quaternion.FromEulerAngles(rx, ry, rz);
                 rot.Normalize();
             }
             Vector3 trans = srt.Translate != null ? new Vector3(srt.Translate.X, srt.Translate.Y, srt.Translate.Z) : Vector3.Zero;

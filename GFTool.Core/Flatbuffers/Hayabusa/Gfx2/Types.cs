@@ -3,7 +3,7 @@ using FlatSharp.Attributes;
 namespace GFTool.Core.Flatbuffers.Hayabusa.Gfx2
 {
     [FlatBufferStruct]
-    public struct InstanceVector3f
+    public class InstanceVector3f
     {
         [FlatBufferItem(0)] public float X { get; set; }
         [FlatBufferItem(1)] public float Y { get; set; }

@@ -37,9 +37,12 @@ namespace GFTool.Core.Flatbuffers.TR.Scene
         public string[] SubScenes { get; set; }
 
         [FlatBufferItem(6)]
-        public bool unk_5 { get; set; }
+        public bool LoadAtStart { get; set; }
 
         [FlatBufferItem(7)]
-        public bool unk_6 { get; set; }
+        public bool SkipLoadingWithoutTop { get; set; }
+
+        [FlatBufferItem(8)]
+        public int MemorySize { get; set; }
     }
 }

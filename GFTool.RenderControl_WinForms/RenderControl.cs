@@ -27,11 +27,17 @@ namespace GFTool.RenderControl_WinForms
         private float pendingDolly = 0f;
         private float ctrlSpeedMultiplier = 2.0f;
         private bool vsyncEnabled = false;
+        private long lastFrameMeasureTicks = 0;
+        private float avgFrameMs = 0f;
 
         private const float CtrlSpeedMin = 1.0f;
         private const float CtrlSpeedMax = 200.0f;
         private const float CtrlSpeedStepFactor = 1.25f;
         private const float MouseWheelDollyStep = 0.25f;
+        private const float FrameAverageAlpha = 0.15f;
+
+        public float ApproxFrameMs => avgFrameMs;
+        public float ApproxFps => avgFrameMs > 0.0001f ? 1000f / avgFrameMs : 0f;
 
         public RenderControl()
         {
@@ -311,12 +317,35 @@ namespace GFTool.RenderControl_WinForms
 
             while (IsApplicationIdle())
             {
+                long frameStart = Stopwatch.GetTimestamp();
                 float deltaSeconds = GetDeltaSeconds();
                 renderer.UpdateMovementControls(deltaSeconds * GetMovementSpeedMultiplier());
 
                 ApplyPendingCameraInput();
                 renderer.Update();
+                UpdateFrameTiming(frameStart);
             }
+        }
+
+        private void UpdateFrameTiming(long frameStartTicks)
+        {
+            long frameEnd = Stopwatch.GetTimestamp();
+            float frameMs = (float)((frameEnd - frameStartTicks) * 1000.0 / Stopwatch.Frequency);
+            if (frameMs <= 0f)
+            {
+                return;
+            }
+
+            if (lastFrameMeasureTicks == 0 || avgFrameMs <= 0f)
+            {
+                avgFrameMs = frameMs;
+            }
+            else
+            {
+                avgFrameMs = (avgFrameMs * (1f - FrameAverageAlpha)) + (frameMs * FrameAverageAlpha);
+            }
+
+            lastFrameMeasureTicks = frameEnd;
         }
 
         private void ApplyPendingCameraInput()

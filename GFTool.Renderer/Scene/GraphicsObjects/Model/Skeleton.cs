@@ -11,6 +11,7 @@ using Trinity.Core.Assets;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 
 namespace GFTool.Renderer.Scene.GraphicsObjects
@@ -19,6 +20,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
 	    {
         private void ParseArmature(string file)
         {
+            long parseStart = Stopwatch.GetTimestamp();
             var skel = LoadFlat<TRSKL>(file);
             MergedSkeletonResult? merge = null;
             currentSkeletonPath = file;
@@ -39,6 +41,7 @@ namespace GFTool.Renderer.Scene.GraphicsObjects
                 RenderOptions.MapBlendIndicesViaSkinningPalette,
                 RenderOptions.MapBlendIndicesViaBoneMeta,
                 RenderOptions.AutoMapBlendIndices);
+            prepareSkeletonMs += Stopwatch.GetElapsedTime(parseStart).TotalMilliseconds;
         }
 
         private readonly struct MergedSkeletonResult

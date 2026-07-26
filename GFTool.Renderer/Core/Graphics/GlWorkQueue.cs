@@ -72,10 +72,6 @@ namespace GFTool.Renderer.Core.Graphics
                         }
                     }
                 }
-                else
-                {
-                    return;
-                }
             }
         }
     }

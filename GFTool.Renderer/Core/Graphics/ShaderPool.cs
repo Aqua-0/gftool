@@ -10,6 +10,7 @@ namespace GFTool.Renderer.Core.Graphics
         public static ShaderPool Instance { get { return lazy.Value; } }
 
         private Dictionary<string, Shader> shaders = new Dictionary<string, Shader>();
+        private readonly HashSet<string> unsupportedShaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private string shaderPath;
 
@@ -24,6 +25,8 @@ namespace GFTool.Renderer.Core.Graphics
             {
                 return;
             }
+
+            unsupportedShaders.Remove(name);
 
             if (!shaders.TryGetValue(name, out var shader) || shader == null)
             {
@@ -53,6 +56,8 @@ namespace GFTool.Renderer.Core.Graphics
 
         private bool AddShader(string name)
         {
+            unsupportedShaders.Remove(name);
+
             string vsh;
             string fsh;
 
@@ -79,6 +84,7 @@ namespace GFTool.Renderer.Core.Graphics
         LoadShader:
             if (!File.Exists(vsh) || !File.Exists(fsh))
             {
+                unsupportedShaders.Add(name);
                 MessageHandler.Instance.AddMessage(MessageType.ERROR, string.Format("Shader \"{0}\" not supported.", name));
                 return false;
             }
@@ -97,6 +103,11 @@ namespace GFTool.Renderer.Core.Graphics
 
         public Shader? GetShader(string name)
         {
+            if (unsupportedShaders.Contains(name))
+            {
+                return null;
+            }
+
             if (!shaders.ContainsKey(name))
             {
                 if (!AddShader(name))

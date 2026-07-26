@@ -29,7 +29,7 @@ namespace TrinitySceneView
                     {
                         m.Model.SetVisible(s.Visible);
                         var mat = ApplyViewerMatrixOptions(
-                            actorMat * m.LocalMatrix,
+                            m.LocalMatrix * actorMat,
                             config.SpawnModelsAtOrigin,
                             config.ApplySceneRotationToActors && config.RotateModels180X,
                             config.ApplySceneRotationToActors && config.RotateModels180Y,
